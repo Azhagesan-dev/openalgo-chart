@@ -340,6 +340,9 @@ export const getTickerPrice = async (symbol, exchange = 'NSE', signal) => {
             };
         }
 
+        if (!data || !data.data) {
+            console.warn('[OpenAlgo] No data in quotes response for', symbol, data);
+        }
         return null;
     } catch (error) {
         if (error.name !== 'AbortError') {

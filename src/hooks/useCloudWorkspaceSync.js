@@ -91,7 +91,7 @@ export const useCloudWorkspaceSync = (isAuthenticated) => {
         // This flag is set by ApiKeyDialog when it saves preferences from the validation response
         const cloudSyncDone = localStorage.getItem('_cloud_sync_done');
         if (cloudSyncDone === 'true') {
-            logger.info('[CloudSync] Preferences already loaded during login, skipping fetch');
+            logger.info('[CloudSync] Preferences already loaded during login, skipping fetch. Current Theme:', localStorage.getItem('tv_theme'));
             // Clear the flag for future sessions
             localStorage.removeItem('_cloud_sync_done');
             hasLoadedFromServer.current = true;
@@ -100,6 +100,8 @@ export const useCloudWorkspaceSync = (isAuthenticated) => {
                 lastSavedState.current[key] = localStorage.getItem(key);
             });
             setLoadedForAuth(true);
+            // Ensure listeners (like ThemeContext) update
+            window.dispatchEvent(new Event('cloud-sync-complete'));
             return;
         }
 
