@@ -103,6 +103,7 @@ const ChartContextMenu = ({
     symbol,
     exchange,
     price,
+    ltp = null, // Current Last Traded Price for dynamic order options
     indicatorCount = 0,
     isVerticalCursorLocked = false,
     onCancelOrder,
@@ -121,6 +122,10 @@ const ChartContextMenu = ({
 }) => {
     const menuRef = useRef(null);
     const { isAuthenticated } = useUser();
+
+    // Determine if clicked price is above or below LTP
+    const isAboveLTP = ltp != null && price != null && price > ltp;
+    const isBelowLTP = ltp != null && price != null && price < ltp;
 
     // Format price for display
     const formattedPrice = price != null ? price.toLocaleString('en-IN', {
@@ -232,29 +237,54 @@ const ChartContextMenu = ({
             {/* Trading options - only show when authenticated */}
             {isAuthenticated && (
                 <>
-                    {/* Sell Order */}
+                    {/* Above LTP: Sell Limit first, then Buy Stop */}
+                    {/* Below LTP: Buy Limit first, then Sell Stop */}
+
+                    {/* First order option */}
                     <button
                         className={styles.contextMenuItem}
                         onClick={() => {
-                            onPlaceSellOrder?.(price);
+                            if (isAboveLTP || !isBelowLTP) {
+                                // Above LTP or same: Sell Limit
+                                onPlaceSellOrder?.(price, 'LIMIT');
+                            } else {
+                                // Below LTP: Buy Limit
+                                onPlaceBuyOrder?.(price, 'LIMIT');
+                            }
                             onClose();
                         }}
                     >
-                        <span className={styles.menuIcon}><SellIcon /></span>
-                        <span className={styles.menuLabel}>Sell 1 {symbol} @ {formattedPrice} limit</span>
-                        <span className={styles.menuShortcut}>Alt + Shift + S</span>
+                        <span className={styles.menuIcon}>{isAboveLTP || !isBelowLTP ? <SellIcon /> : <BuyIcon />}</span>
+                        <span className={styles.menuLabel}>
+                            {isAboveLTP || !isBelowLTP
+                                ? `Sell 1 ${symbol} @ ${formattedPrice} limit`
+                                : `Buy 1 ${symbol} @ ${formattedPrice} limit`
+                            }
+                        </span>
+                        <span className={styles.menuShortcut}>{isAboveLTP || !isBelowLTP ? 'Alt + Shift + S' : 'Alt + Shift + B'}</span>
                     </button>
 
-                    {/* Buy Order */}
+                    {/* Second order option */}
                     <button
                         className={styles.contextMenuItem}
                         onClick={() => {
-                            onPlaceBuyOrder?.(price);
+                            if (isAboveLTP || !isBelowLTP) {
+                                // Above LTP or same: Buy Stop
+                                onPlaceBuyOrder?.(price, 'SL');
+                            } else {
+                                // Below LTP: Sell Stop
+                                onPlaceSellOrder?.(price, 'SL');
+                            }
                             onClose();
                         }}
                     >
-                        <span className={styles.menuIcon}><BuyIcon /></span>
-                        <span className={styles.menuLabel}>Buy 1 {symbol} @ {formattedPrice} stop</span>
+                        <span className={styles.menuIcon}>{isAboveLTP || !isBelowLTP ? <BuyIcon /> : <SellIcon />}</span>
+                        <span className={styles.menuLabel}>
+                            {isAboveLTP || !isBelowLTP
+                                ? `Buy 1 ${symbol} @ ${formattedPrice} stop`
+                                : `Sell 1 ${symbol} @ ${formattedPrice} stop`
+                            }
+                        </span>
                     </button>
 
                     {/* Add Order */}

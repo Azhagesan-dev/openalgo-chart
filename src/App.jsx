@@ -323,6 +323,13 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
   // Right Panel State
   const [activeRightPanel, setActiveRightPanel] = useState('watchlist');
 
+  // Trading Panel initial values (from context menu)
+  const [tradingPanelConfig, setTradingPanelConfig] = useState({
+    action: 'BUY',
+    price: '',
+    orderType: 'MARKET'
+  });
+
   // Position Tracker State
   const [positionTrackerSettings, setPositionTrackerSettings] = useState(() => {
     const saved = safeParseJSON(localStorage.getItem('tv_position_tracker_settings'), null);
@@ -1895,6 +1902,9 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
               isOpen={true}
               onClose={() => setActiveRightPanel('watchlist')}
               showToast={showToast}
+              initialAction={tradingPanelConfig.action}
+              initialPrice={tradingPanelConfig.price}
+              initialOrderType={tradingPanelConfig.orderType}
             />
           ) : null
         }
@@ -1941,6 +1951,14 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
             showOILines={showOILines}
             onOpenSettings={() => setIsSettingsOpen(true)}
             onOpenObjectTree={() => setActiveRightPanel('objectTree')}
+            onOpenTradingPanel={(action, price, orderType) => {
+              setTradingPanelConfig({
+                action: action || 'BUY',
+                price: price ? price.toFixed(2) : '',
+                orderType: orderType || 'LIMIT'
+              });
+              setActiveRightPanel('trade');
+            }}
           />
         }
       />

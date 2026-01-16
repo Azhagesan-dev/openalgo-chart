@@ -66,7 +66,6 @@ import { saveAlertsForSymbol, loadAlertsForSymbol } from '../../services/alertSe
 import { usePaneMenu } from './hooks/usePaneMenu';
 import { useOrders } from '../../context/OrderContext';
 import { useUser } from '../../context/UserContext';
-import { placeOrder } from '../../services/openalgo';
 
 const ChartComponent = forwardRef(({
     data: initialData = [],
@@ -101,7 +100,8 @@ const ChartComponent = forwardRef(({
     oiLines = null, // { maxCallOI, maxPutOI, maxPain } - OI levels to display as price lines
     showOILines = false, // Whether to show OI lines
     onOpenSettings, // Callback to open settings dialog
-    onOpenObjectTree // Callback to open object tree panel
+    onOpenObjectTree, // Callback to open object tree panel
+    onOpenTradingPanel // Callback to open trading panel with pre-filled values (action, price, orderType)
 }, ref) => {
     // Get authentication status
     const { isAuthenticated } = useUser();
@@ -4005,6 +4005,7 @@ const ChartComponent = forwardRef(({
                 symbol={symbol}
                 exchange={exchange}
                 price={contextMenu.price}
+                ltp={dataRef.current?.length > 0 ? dataRef.current[dataRef.current.length - 1]?.close : null}
                 indicatorCount={indicators?.length || 0}
                 isVerticalCursorLocked={isVerticalCursorLocked}
                 onCancelOrder={onCancelOrder}
@@ -4026,43 +4027,22 @@ const ChartComponent = forwardRef(({
                         }
                     }
                 }}
-                onPlaceSellOrder={async (price) => {
-                    // Place sell limit order at clicked price
-                    try {
-                        await placeOrder({
-                            symbol: symbol,
-                            exchange: exchange,
-                            action: 'SELL',
-                            price: price,
-                            quantity: 1,
-                            pricetype: 'LIMIT',
-                            product: 'MIS'
-                        });
-                    } catch (error) {
-                        console.error('Failed to place sell order:', error);
+                onPlaceSellOrder={(price, orderType) => {
+                    // Open trading panel with SELL pre-filled
+                    if (onOpenTradingPanel) {
+                        onOpenTradingPanel('SELL', price, orderType || 'LIMIT');
                     }
                 }}
-                onPlaceBuyOrder={async (price) => {
-                    // Place buy stop order at clicked price
-                    try {
-                        await placeOrder({
-                            symbol: symbol,
-                            exchange: exchange,
-                            action: 'BUY',
-                            price: price,
-                            quantity: 1,
-                            pricetype: 'SL',
-                            product: 'MIS',
-                            trigger_price: price
-                        });
-                    } catch (error) {
-                        console.error('Failed to place buy order:', error);
+                onPlaceBuyOrder={(price, orderType) => {
+                    // Open trading panel with BUY pre-filled
+                    if (onOpenTradingPanel) {
+                        onOpenTradingPanel('BUY', price, orderType || 'LIMIT');
                     }
                 }}
                 onAddOrder={(price) => {
-                    // Open trading panel / order dialog at price
-                    if (setActiveRightPanel) {
-                        setActiveRightPanel('trade');
+                    // Open trading panel with default settings at price
+                    if (onOpenTradingPanel) {
+                        onOpenTradingPanel('BUY', price, 'LIMIT');
                     }
                 }}
                 onToggleCursorLock={() => {
