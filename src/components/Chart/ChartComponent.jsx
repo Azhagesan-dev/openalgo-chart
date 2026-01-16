@@ -66,6 +66,7 @@ import { saveAlertsForSymbol, loadAlertsForSymbol } from '../../services/alertSe
 import { usePaneMenu } from './hooks/usePaneMenu';
 import { useOrders } from '../../context/OrderContext';
 import { useUser } from '../../context/UserContext';
+import { placeOrder } from '../../services/openalgo';
 
 const ChartComponent = forwardRef(({
     data: initialData = [],
@@ -98,7 +99,9 @@ const ChartComponent = forwardRef(({
     strategyConfig = null, // { strategyType, legs: [{ id, symbol, direction, quantity }], exchange, displayName }
     onOpenOptionChain, // Callback to open option chain for current symbol
     oiLines = null, // { maxCallOI, maxPutOI, maxPain } - OI levels to display as price lines
-    showOILines = false // Whether to show OI lines
+    showOILines = false, // Whether to show OI lines
+    onOpenSettings, // Callback to open settings dialog
+    onOpenObjectTree // Callback to open object tree panel
 }, ref) => {
     // Get authentication status
     const { isAuthenticated } = useUser();
@@ -108,7 +111,8 @@ const ChartComponent = forwardRef(({
 
     const chartContainerRef = useRef();
     const [isLoading, setIsLoading] = useState(true);
-    const [contextMenu, setContextMenu] = useState({ show: false, x: 0, y: 0 });
+    const [contextMenu, setContextMenu] = useState({ show: false, x: 0, y: 0, price: null });
+    const [isVerticalCursorLocked, setIsVerticalCursorLocked] = useState(false);
     const [priceScaleMenu, setPriceScaleMenu] = useState({ visible: false, x: 0, y: 0, price: null });
     const [indicatorSettingsOpen, setIndicatorSettingsOpen] = useState(null); // which indicator's settings are open
     const [indicatorValues, setIndicatorValues] = useState({}); // Current value under cursor for each indicator { id: value }
@@ -124,7 +128,7 @@ const ChartComponent = forwardRef(({
     // Close context menu on click outside
     useEffect(() => {
         if (!contextMenu.show) return;
-        const handleClickAway = () => setContextMenu({ show: false, x: 0, y: 0 });
+        const handleClickAway = () => setContextMenu({ show: false, x: 0, y: 0, price: null });
         document.addEventListener('click', handleClickAway);
         return () => document.removeEventListener('click', handleClickAway);
     }, [contextMenu.show]);
@@ -1646,8 +1650,20 @@ const ChartComponent = forwardRef(({
             // check for hovered order
             const hoveredOrderId = visualTradingRef.current ? visualTradingRef.current.getHoveredOrderId() : null;
 
+            // Calculate price at click point
+            let clickPrice = null;
+            if (mainSeriesRef.current && chartContainerRef.current) {
+                const rect = chartContainerRef.current.getBoundingClientRect();
+                const relativeY = event.clientY - rect.top;
+                try {
+                    clickPrice = mainSeriesRef.current.coordinateToPrice(relativeY);
+                } catch (e) {
+                    console.warn('Failed to convert coordinate to price', e);
+                }
+            }
+
             // Show custom context menu
-            setContextMenu({ show: true, x: event.clientX, y: event.clientY, orderId: hoveredOrderId });
+            setContextMenu({ show: true, x: event.clientX, y: event.clientY, orderId: hoveredOrderId, price: clickPrice });
         };
         const container = chartContainerRef.current;
         container.addEventListener('contextmenu', handleContextMenu, true);
@@ -3988,9 +4004,89 @@ const ChartComponent = forwardRef(({
                 orderId={contextMenu.orderId}
                 symbol={symbol}
                 exchange={exchange}
+                price={contextMenu.price}
+                indicatorCount={indicators?.length || 0}
+                isVerticalCursorLocked={isVerticalCursorLocked}
                 onCancelOrder={onCancelOrder}
                 onOpenOptionChain={onOpenOptionChain}
-                onClose={() => setContextMenu({ show: false, x: 0, y: 0 })}
+                onResetChartView={() => {
+                    // Reset chart to default view
+                    applyDefaultCandlePosition(dataRef.current?.length || 0);
+                }}
+                onCopyPrice={(price) => {
+                    // Price is copied in the component, just a notification hook
+                    console.log('Price copied:', price);
+                }}
+                onAddAlert={(price) => {
+                    // Add alert at the clicked price
+                    if (lineToolManagerRef.current) {
+                        const userAlerts = lineToolManagerRef.current._userPriceAlerts;
+                        if (userAlerts && typeof userAlerts.addAlertWithCondition === 'function') {
+                            userAlerts.addAlertWithCondition(price, 'crossing');
+                        }
+                    }
+                }}
+                onPlaceSellOrder={async (price) => {
+                    // Place sell limit order at clicked price
+                    try {
+                        await placeOrder({
+                            symbol: symbol,
+                            exchange: exchange,
+                            action: 'SELL',
+                            price: price,
+                            quantity: 1,
+                            pricetype: 'LIMIT',
+                            product: 'MIS'
+                        });
+                    } catch (error) {
+                        console.error('Failed to place sell order:', error);
+                    }
+                }}
+                onPlaceBuyOrder={async (price) => {
+                    // Place buy stop order at clicked price
+                    try {
+                        await placeOrder({
+                            symbol: symbol,
+                            exchange: exchange,
+                            action: 'BUY',
+                            price: price,
+                            quantity: 1,
+                            pricetype: 'SL',
+                            product: 'MIS',
+                            trigger_price: price
+                        });
+                    } catch (error) {
+                        console.error('Failed to place buy order:', error);
+                    }
+                }}
+                onAddOrder={(price) => {
+                    // Open trading panel / order dialog at price
+                    if (setActiveRightPanel) {
+                        setActiveRightPanel('trade');
+                    }
+                }}
+                onToggleCursorLock={() => {
+                    setIsVerticalCursorLocked(prev => !prev);
+                    // TODO: Implement actual crosshair lock functionality
+                }}
+                onOpenObjectTree={() => {
+                    if (onOpenObjectTree) {
+                        onOpenObjectTree();
+                    }
+                }}
+                onRemoveIndicator={() => {
+                    // Remove the last indicator
+                    if (indicators?.length > 0 && onIndicatorRemove) {
+                        const lastIndicator = indicators[indicators.length - 1];
+                        onIndicatorRemove(lastIndicator.id);
+                    }
+                }}
+                onOpenSettings={() => {
+                    if (onOpenSettings) {
+                        onOpenSettings();
+                    }
+                }}
+                onClose={() => setContextMenu({ show: false, x: 0, y: 0, price: null })}
             />
 
         </div >

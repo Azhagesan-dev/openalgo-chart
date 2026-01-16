@@ -1939,6 +1939,8 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
             onOpenOptionChain={handleOpenOptionChainForSymbol}
             oiLines={oiLines}
             showOILines={showOILines}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            onOpenObjectTree={() => setActiveRightPanel('objectTree')}
           />
         }
       />
