@@ -71,7 +71,7 @@ const loadInitialState = () => {
             layout: oldData.layout || '1',
             activeChartId: migratedCharts[0]?.id || 1, // Default to first chart logic
             charts: migratedCharts.length > 0 ? migratedCharts : [
-                { id: 1, symbol: 'NIFTY', exchange: 'NSE_INDEX', interval: '1D', indicators: [] }
+                { id: 1, symbol: 'NIFTY', exchange: 'NSE_INDEX', interval: 'D', indicators: [] }
             ],
             chartRefs: {}
         };
@@ -82,7 +82,7 @@ const loadInitialState = () => {
         layout: '1',
         activeChartId: 1,
         charts: [
-            { id: 1, symbol: 'NIFTY', exchange: 'NSE_INDEX', interval: '1D', indicators: [] }
+            { id: 1, symbol: 'NIFTY', exchange: 'NSE_INDEX', interval: 'D', indicators: [] }
         ],
         chartRefs: {} // Non-persisted refs
     };
