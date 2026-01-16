@@ -131,12 +131,11 @@ const SectorHeatmapModal = ({ isOpen, onClose, watchlistData, onSectorSelect, on
   const treemapLayout = useMemo(() => {
     if (containerSize.width === 0 || containerSize.height === 0) return [];
 
-    // Use stock COUNT for sector sizing (proportional representation)
-    const totalStocks = stockData.length;
+    // Use stock COUNT for sector sizing, but Boost small sectors for visibility
     const sectorItems = sectorData.map(s => ({
       ...s,
-      value: s.stockCount, // Size by stock count, not market cap
-    }));
+      value: Math.max(s.stockCount, 3), // Minimum weight of 3 prevents tiny unreadable strips
+    })).sort((a, b) => b.value - a.value); // CRITICAL: Sort by value for Squarified algorithm
 
     const sectorLayout = calculateTreemapLayout(
       sectorItems,
@@ -153,7 +152,7 @@ const SectorHeatmapModal = ({ isOpen, onClose, watchlistData, onSectorSelect, on
         value: 1, // Equal size for all stocks
       }));
 
-      const padding = 2;
+      const padding = 0; // Seamless (TradingView style)
       const headerHeight = 22;
       const stockLayout = calculateTreemapLayout(
         stockItems,
@@ -169,6 +168,17 @@ const SectorHeatmapModal = ({ isOpen, onClose, watchlistData, onSectorSelect, on
       };
     });
   }, [sectorData, stockData.length, containerSize]);
+
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+
+  const handleStockMouseEnter = (stock, e) => {
+    setHoveredStock(stock);
+    setTooltipPos({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleStockMouseMove = (e) => {
+    setTooltipPos({ x: e.clientX, y: e.clientY });
+  };
 
   // Render Professional Treemap View
   const renderTreemapView = () => {
@@ -192,13 +202,26 @@ const SectorHeatmapModal = ({ isOpen, onClose, watchlistData, onSectorSelect, on
                 className={styles.treemapSectorHeader}
                 style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
               >
-                <span className={styles.treemapSectorName}>{sector.sector}</span>
-                <span
-                  className={styles.treemapSectorChange}
-                  style={{ color: getChangeColor(sector.avgChange, false) }}
-                >
-                  {sector.avgChange >= 0 ? '+' : ''}{sector.avgChange.toFixed(2)}%
-                </span>
+                {/* Responsive Header: Hide details if sector is too narrow */}
+                {sector.width > 40 && (
+                  <span
+                    className={styles.treemapSectorName}
+                    style={{ fontSize: Math.max(Math.min(sector.width / 8, 11), 9) }}
+                  >
+                    {sector.sector}
+                  </span>
+                )}
+                {sector.width > 90 && (
+                  <span
+                    className={styles.treemapSectorChange}
+                    style={{
+                      color: getChangeColor(sector.avgChange, false),
+                      fontSize: '11px'
+                    }}
+                  >
+                    {sector.avgChange >= 0 ? '+' : ''}{sector.avgChange.toFixed(2)}%
+                  </span>
+                )}
               </div>
 
               {sector.stockLayout.map(stock => (
@@ -213,22 +236,28 @@ const SectorHeatmapModal = ({ isOpen, onClose, watchlistData, onSectorSelect, on
                     backgroundColor: getChangeColor(stock.change, true),
                   }}
                   onClick={(e) => handleStockClick(stock, e)}
-                  onMouseEnter={() => setHoveredStock(stock)}
+                  onMouseEnter={(e) => handleStockMouseEnter(stock, e)}
+                  onMouseMove={handleStockMouseMove}
                   onMouseLeave={() => setHoveredStock(null)}
                 >
                   <div className={styles.treemapStockContent}>
-                    {/* Always show symbol if tile is visible */}
-                    <span
-                      className={styles.treemapSymbol}
-                      style={{
-                        fontSize: Math.max(Math.min(stock.width / 5.5, 16), 10),
-                        color: getTextColor()
-                      }}
-                    >
-                      {stock.symbol}
-                    </span>
-                    {/* Show % change if height allows */}
-                    {stock.height > 35 && (
+                    {/* Responsive Text Logic: Matches TradingView behavior */}
+
+                    {/* 1. Symbol: Only show if tile is big enough for at least short text */}
+                    {stock.width > 28 && stock.height > 18 && (
+                      <span
+                        className={styles.treemapSymbol}
+                        style={{
+                          fontSize: Math.max(Math.min(stock.width / 5.5, 16), 10),
+                          color: getTextColor()
+                        }}
+                      >
+                        {stock.symbol}
+                      </span>
+                    )}
+
+                    {/* 2. Change %: Only show if tile has vertical space */}
+                    {stock.width > 35 && stock.height > 35 && (
                       <span
                         className={styles.treemapChange}
                         style={{
@@ -239,8 +268,9 @@ const SectorHeatmapModal = ({ isOpen, onClose, watchlistData, onSectorSelect, on
                         {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)}%
                       </span>
                     )}
-                    {/* Show price only if enough space */}
-                    {stock.height > 55 && stock.width > 55 && (
+
+                    {/* 3. Price: Only show for large "hero" tiles */}
+                    {stock.height > 55 && stock.width > 60 && (
                       <span
                         className={styles.treemapLtp}
                         style={{ color: 'rgba(255,255,255,0.85)' }}
@@ -257,7 +287,21 @@ const SectorHeatmapModal = ({ isOpen, onClose, watchlistData, onSectorSelect, on
 
         {/* Hover tooltip */}
         {hoveredStock && (
-          <div className={styles.tooltip}>
+          <div
+            className={styles.tooltip}
+            style={{
+              top: (tooltipPos.y + 20) + 'px',
+              left: tooltipPos.x + 'px',
+              right: 'auto',
+              bottom: 'auto',
+              transform: 'translateX(-50%)',
+              position: 'fixed',
+              zIndex: 10001,
+              pointerEvents: 'none',
+              transition: 'none',
+              animation: 'none'
+            }}
+          >
             <div className={styles.tooltipHeader}>
               <span className={styles.tooltipSymbol}>{hoveredStock.symbol}</span>
               <span
