@@ -230,6 +230,13 @@ export const SHORTCUTS = {
         label: 'Draw Horizontal Line',
         action: 'drawHorizontalLine',
     },
+    takeScreenshot: {
+        key: 's',
+        modifiers: ['cmd', 'shift'],
+        category: SHORTCUT_CATEGORIES.ACTIONS,
+        label: 'Take Screenshot',
+        action: 'takeScreenshot',
+    },
 };
 
 /**

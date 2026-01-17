@@ -35,7 +35,8 @@ export const useToolHandlers = ({
     setIsReplayMode,
     currentSymbol,
     showToast,
-    showSnapshotToast
+    showSnapshotToast,
+    requestConfirm
 }) => {
     // Toggle drawing toolbar visibility
     const toggleDrawingToolbar = useCallback(() => {
@@ -65,13 +66,30 @@ export const useToolHandlers = ({
             }
             setActiveTool(null);
         } else if (tool === 'clear_all') {
-            const activeRef = chartRefs.current[activeChartId];
-            if (activeRef) {
-                activeRef.clearTools();
+            // Confirm before clearing all drawings
+            const clearDrawings = () => {
+                const activeRef = chartRefs.current[activeChartId];
+                if (activeRef) {
+                    activeRef.clearTools();
+                }
+                setIsDrawingsHidden(false);
+                setIsDrawingsLocked(false);
+                setActiveTool(null);
+            };
+
+            if (requestConfirm) {
+                requestConfirm({
+                    title: 'Remove Objects',
+                    message: 'Clear all drawings? This action cannot be undone.',
+                    onConfirm: clearDrawings,
+                    confirmText: 'Remove',
+                    danger: true
+                });
+            } else if (window.confirm('Clear all drawings? This action cannot be undone.')) {
+                clearDrawings();
+            } else {
+                return;
             }
-            setIsDrawingsHidden(false);
-            setIsDrawingsLocked(false);
-            setActiveTool(null);
         } else if (tool === 'lock_all') {
             setIsDrawingsLocked(prev => !prev);
             setActiveTool(tool);

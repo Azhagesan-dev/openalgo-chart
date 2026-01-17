@@ -20,6 +20,7 @@ import AlertsPanel from './components/Alerts/AlertsPanel';
 import ApiKeyDialog from './components/ApiKeyDialog/ApiKeyDialog';
 import MobileNav from './components/MobileNav';
 import LayoutTemplateDialog from './components/LayoutTemplates/LayoutTemplateDialog';
+import ConfirmDialog from './components/ConfirmDialog';
 
 // Lazy load heavy modal components for better initial load performance
 const SettingsPopup = lazy(() => import('./components/Settings/SettingsPopup'));
@@ -320,6 +321,37 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
 
   // ANN Scanner background scan handlers
   const { startAnnScan, cancelAnnScan } = useANNScanner(annScannerState, setAnnScannerState);
+
+  // Confirm Dialog State
+  const [confirmDialogState, setConfirmDialogState] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: null,
+    onCancel: null,
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
+    danger: false
+  });
+
+  const requestConfirm = useCallback(({ title, message, onConfirm, onCancel, confirmText, cancelText, danger }) => {
+    setConfirmDialogState({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {
+        if (onConfirm) onConfirm();
+        setConfirmDialogState(prev => ({ ...prev, isOpen: false }));
+      },
+      onCancel: () => {
+        if (onCancel) onCancel();
+        setConfirmDialogState(prev => ({ ...prev, isOpen: false }));
+      },
+      confirmText,
+      cancelText,
+      danger
+    });
+  }, []);
 
   // Sector Heatmap Modal State
   const [isSectorHeatmapOpen, setIsSectorHeatmapOpen] = useState(false);
@@ -741,7 +773,8 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
     setIsReplayMode,
     currentSymbol,
     showToast,
-    showSnapshotToast
+    showSnapshotToast,
+    requestConfirm
   });
 
   // UI handlers extracted to hook
@@ -1566,6 +1599,7 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
         activeRef.drawHorizontalLineAtCrosshair();
       }
     },
+    takeScreenshot: handleDownloadImage,
   }), [
     isShortcutsDialogOpen, isCommandPaletteOpen, isSearchOpen, isAlertOpen, isSettingsOpen, isTemplateDialogOpen,
     handleToolChange, handleUndo, handleRedo, handleAlertClick, handleFullScreen, activeChartId, chartRefs, setTradingPanelConfig
@@ -2216,6 +2250,17 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
           />
         )}
       </Suspense>
+
+      <ConfirmDialog
+        isOpen={confirmDialogState.isOpen}
+        title={confirmDialogState.title}
+        message={confirmDialogState.message}
+        onConfirm={confirmDialogState.onConfirm}
+        onCancel={confirmDialogState.onCancel}
+        confirmText={confirmDialogState.confirmText}
+        cancelText={confirmDialogState.cancelText}
+        danger={confirmDialogState.danger}
+      />
     </OrderProvider>
   );
 }

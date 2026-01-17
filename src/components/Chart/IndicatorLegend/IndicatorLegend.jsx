@@ -7,6 +7,13 @@ import styles from './IndicatorLegend.module.css';
 const IndicatorRow = ({ indicator, onVisibilityToggle, onRemove, onSettings, onPaneMenu, isPaneIndicator }) => (
     <div
         className={`${styles.indicatorRow} ${indicator.isHidden ? styles.indicatorHidden : ''}`}
+        onContextMenu={(e) => {
+            e.preventDefault();
+            // Right-click toggles visibility
+            if (onVisibilityToggle) {
+                onVisibilityToggle(indicator.id || indicator.type);
+            }
+        }}
     >
         {/* Name with params - like TradingView: "EMA 20 close 0" */}
         <span className={styles.indicatorName}>
@@ -25,9 +32,9 @@ const IndicatorRow = ({ indicator, onVisibilityToggle, onRemove, onSettings, onP
                 title="Pane options"
             >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18" height="18">
-                    <circle fill="currentColor" cx="9" cy="4" r="1.5"/>
-                    <circle fill="currentColor" cx="9" cy="9" r="1.5"/>
-                    <circle fill="currentColor" cx="9" cy="14" r="1.5"/>
+                    <circle fill="currentColor" cx="9" cy="4" r="1.5" />
+                    <circle fill="currentColor" cx="9" cy="9" r="1.5" />
+                    <circle fill="currentColor" cx="9" cy="14" r="1.5" />
                 </svg>
             </button>
         )}
