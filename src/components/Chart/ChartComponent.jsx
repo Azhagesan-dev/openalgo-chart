@@ -640,6 +640,38 @@ const ChartComponent = forwardRef(({
             if (lineToolManagerRef.current && typeof lineToolManagerRef.current.disableSessionHighlighting === 'function') {
                 lineToolManagerRef.current.disableSessionHighlighting();
             }
+        },
+        // Shortcut helper methods
+        getCrosshairPrice: () => {
+            // Return the current price as the "crosshair price" since we don't track crosshair position
+            // This is used by keyboard shortcuts for trading orders
+            if (dataRef.current && dataRef.current.length > 0) {
+                const lastData = dataRef.current[dataRef.current.length - 1];
+                return lastData.close ?? lastData.value;
+            }
+            return null;
+        },
+        addAlertAtCrosshair: () => {
+            // Add alert at current price (used by Alt+A shortcut)
+            const currentPrice = dataRef.current?.length > 0
+                ? (dataRef.current[dataRef.current.length - 1].close ?? dataRef.current[dataRef.current.length - 1].value)
+                : null;
+            if (currentPrice) {
+                const manager = lineToolManagerRef.current;
+                const userAlerts = manager && manager._userPriceAlerts;
+                if (userAlerts && typeof userAlerts.addAlertWithCondition === 'function') {
+                    userAlerts.addAlertWithCondition(currentPrice, 'crossing');
+                }
+            }
+        },
+        drawHorizontalLineAtCrosshair: () => {
+            // Draw horizontal line at current price (used by Alt+H shortcut)
+            const currentPrice = dataRef.current?.length > 0
+                ? (dataRef.current[dataRef.current.length - 1].close ?? dataRef.current[dataRef.current.length - 1].value)
+                : null;
+            if (currentPrice && lineToolManagerRef.current) {
+                lineToolManagerRef.current.createHorizontalLineAtPrice(currentPrice);
+            }
         }
     }));
 

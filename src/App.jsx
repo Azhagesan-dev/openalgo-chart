@@ -1550,9 +1550,70 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
     redo: handleRedo,
     createAlert: handleAlertClick,
     toggleFullscreen: handleFullScreen,
+
+    // Context Menu Shortcuts
+    resetChartView: () => {
+      const activeRef = chartRefs.current[activeChartId];
+      if (activeRef && typeof activeRef.resetZoom === 'function') {
+        activeRef.resetZoom();
+      }
+    },
+    addAlertAtPrice: () => {
+      // Add alert at current crosshair price
+      const activeRef = chartRefs.current[activeChartId];
+      if (activeRef && typeof activeRef.addAlertAtCrosshair === 'function') {
+        activeRef.addAlertAtCrosshair();
+      } else {
+        // Fallback: open alert dialog
+        handleAlertClick();
+      }
+    },
+    sellLimitOrder: () => {
+      // Open trading panel with SELL pre-filled at crosshair price
+      const activeRef = chartRefs.current[activeChartId];
+      const crosshairPrice = activeRef?.getCrosshairPrice?.();
+      if (crosshairPrice) {
+        setTradingPanelConfig({
+          action: 'SELL',
+          price: crosshairPrice,
+          orderType: 'LIMIT'
+        });
+      }
+    },
+    buyLimitOrder: () => {
+      // Open trading panel with BUY pre-filled at crosshair price
+      const activeRef = chartRefs.current[activeChartId];
+      const crosshairPrice = activeRef?.getCrosshairPrice?.();
+      if (crosshairPrice) {
+        setTradingPanelConfig({
+          action: 'BUY',
+          price: crosshairPrice,
+          orderType: 'LIMIT'
+        });
+      }
+    },
+    addOrder: () => {
+      // Open trading panel at crosshair price
+      const activeRef = chartRefs.current[activeChartId];
+      const crosshairPrice = activeRef?.getCrosshairPrice?.();
+      if (crosshairPrice) {
+        setTradingPanelConfig({
+          action: 'BUY',
+          price: crosshairPrice,
+          orderType: 'LIMIT'
+        });
+      }
+    },
+    drawHorizontalLine: () => {
+      // Draw horizontal line at crosshair price
+      const activeRef = chartRefs.current[activeChartId];
+      if (activeRef && typeof activeRef.drawHorizontalLineAtCrosshair === 'function') {
+        activeRef.drawHorizontalLineAtCrosshair();
+      }
+    },
   }), [
     isShortcutsDialogOpen, isCommandPaletteOpen, isSearchOpen, isAlertOpen, isSettingsOpen, isTemplateDialogOpen,
-    handleToolChange, handleUndo, handleRedo, handleAlertClick, handleFullScreen, activeChartId
+    handleToolChange, handleUndo, handleRedo, handleAlertClick, handleFullScreen, activeChartId, chartRefs, setTradingPanelConfig
   ]);
 
   // Determine if any dialog is open (to disable single-key shortcuts)
