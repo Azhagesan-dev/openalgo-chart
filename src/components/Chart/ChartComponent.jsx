@@ -128,6 +128,8 @@ const ChartComponent = forwardRef(({
     const [indicatorSettingsOpen, setIndicatorSettingsOpen] = useState(null); // which indicator's settings are open
     const [indicatorValues, setIndicatorValues] = useState({}); // Current value under cursor for each indicator { id: value }
     const [tpoLocalSettings, setTpoLocalSettings] = useState({}); // Local TPO settings storage (workaround for broken parent callback)
+    // Comparison symbol price labels - { symbol: { price, y, color } }
+    const [comparisonPriceLabels, setComparisonPriceLabels] = useState({});
 
     const [chartInstance, setChartInstance] = useState(null);
     useChartResize(chartContainerRef, chartInstance);
@@ -3127,7 +3129,28 @@ const ChartComponent = forwardRef(({
         // Add new series with cancellation support
         const loadComparisonData = async (comp) => {
             const key = `${comp.symbol}_${comp.exchange}_${comp.scaleMode || 'samePercent'}`;
-            if (activeSeries.has(key)) return;
+            console.log('[Comparison] Processing:', key, 'Exists:', activeSeries.has(key));
+
+            // Check if series exists AND has data - if it exists but has no data, reload it
+            if (activeSeries.has(key)) {
+                const existingSeries = activeSeries.get(key);
+                try {
+                    const existingData = existingSeries.data();
+                    if (existingData && existingData.length > 0) {
+                        console.log('[Comparison] Series already has data:', key);
+                        return; // Already has data, skip
+                    }
+                    console.log('[Comparison] Series exists but no data, removing and recreating:', key);
+                    // Remove the empty series and recreate
+                    chartRef.current.removeSeries(existingSeries);
+                    activeSeries.delete(key);
+                } catch (e) {
+                    // Series might be invalid, recreate it
+                    console.log('[Comparison] Series check error, recreating:', key, e);
+                    try { chartRef.current.removeSeries(existingSeries); } catch (e2) { /* ignore */ }
+                    activeSeries.delete(key);
+                }
+            }
 
             const scaleMode = comp.scaleMode || 'samePercent';
             let series;
@@ -3171,14 +3194,19 @@ const ChartComponent = forwardRef(({
             }
 
             activeSeries.set(key, series);
+            console.log('[Comparison] Created series for:', key, 'Color:', comp.color);
 
             try {
                 const data = await getKlines(comp.symbol, comp.exchange || 'NSE', interval, 1000, abortController.signal);
+                console.log('[Comparison] Data loaded for:', key, 'Length:', data?.length);
                 // Check if still valid before setting data
                 if (cancelled || !activeSeries.has(key)) return;
                 if (data && data.length > 0) {
                     const transformedData = data.map(d => ({ time: d.time, value: d.close }));
                     series.setData(transformedData);
+                    console.log('[Comparison] Data set for:', key);
+                } else {
+                    console.warn('[Comparison] No data for:', key);
                 }
             } catch (err) {
                 if (err.name !== 'AbortError') {
@@ -3187,6 +3215,7 @@ const ChartComponent = forwardRef(({
             }
         };
 
+        console.log('[Comparison] Processing symbols:', comparisonSymbols.map(c => c.symbol));
         comparisonSymbols.forEach(comp => loadComparisonData(comp));
 
         // Update Price Scale Mode based on comparison mode
@@ -3215,6 +3244,89 @@ const ChartComponent = forwardRef(({
             abortController.abort();
         };
     }, [comparisonSymbols, interval, isLogScale, isAutoScale]);
+
+    // Update comparison symbol price labels
+    useEffect(() => {
+        if (!chartRef.current || comparisonSymbols.length === 0) {
+            setComparisonPriceLabels({});
+            return;
+        }
+
+        const updateComparisonLabels = () => {
+            const container = chartContainerRef.current;
+            if (!container) return;
+
+            const containerRect = container.getBoundingClientRect();
+            const labels = {};
+
+            const activeSeries = comparisonSeriesRefs.current;
+
+            // Count symbol occurrences to handle duplicates
+            const symbolCounts = {};
+            comparisonSymbols.forEach(c => {
+                symbolCounts[c.symbol] = (symbolCounts[c.symbol] || 0) + 1;
+            });
+
+            comparisonSymbols.forEach(comp => {
+                const key = `${comp.symbol}_${comp.exchange}_${comp.scaleMode || 'samePercent'}`;
+                const series = activeSeries.get(key);
+
+                if (series) {
+                    try {
+                        const data = series.data();
+                        if (data && data.length > 0) {
+                            const lastDataPoint = data[data.length - 1];
+                            const price = lastDataPoint.value;
+
+                            // Get Y coordinate for this price
+                            const y = series.priceToCoordinate(price);
+
+                            if (y !== null && y >= 0 && y <= containerRect.height) {
+                                // If symbol appears multiple times, append exchange to differentiate
+                                const displayName = symbolCounts[comp.symbol] > 1
+                                    ? `${comp.symbol} (${comp.exchange})`
+                                    : comp.symbol;
+
+                                // Use unique key for the map to avoid overwriting duplicates
+                                labels[key] = {
+                                    price: price,
+                                    y: y,
+                                    color: comp.color,
+                                    symbol: displayName,
+                                    scaleMode: comp.scaleMode || 'samePercent'
+                                };
+                            }
+                        }
+                    } catch (e) {
+                        // Series may not be ready yet
+                    }
+                }
+            });
+
+            setComparisonPriceLabels(labels);
+        };
+
+        // Initial update
+        const timeoutId = setTimeout(updateComparisonLabels, 500);
+
+        // Subscribe to visible range changes
+        const handleVisibleRangeChange = () => {
+            updateComparisonLabels();
+        };
+
+        if (chartRef.current) {
+            chartRef.current.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
+        }
+
+        return () => {
+            clearTimeout(timeoutId);
+            if (chartRef.current) {
+                try {
+                    chartRef.current.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
+                } catch (e) { /* ignore */ }
+            }
+        };
+    }, [comparisonSymbols]);
 
     // Handle Theme and Appearance Changes
     useEffect(() => {
@@ -4006,6 +4118,48 @@ const ChartComponent = forwardRef(({
                 ohlcData={ohlcData}
                 isToolbarVisible={isToolbarVisible}
             />
+
+            {/* Comparison Symbol Floating Price Labels */}
+            {Object.keys(comparisonPriceLabels).length > 0 && (
+                <div className={styles.comparisonPriceLabels}>
+                    {Object.entries(comparisonPriceLabels).map(([key, data]) => {
+                        // User requested to remove newPriceScale labels
+                        if (data.scaleMode === 'newPriceScale') return null;
+
+                        const isLeftScale = false; // Always right/overlay if not newPriceScale
+                        const formattedPrice = data.price?.toLocaleString('en-IN', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                        }) ?? '0.00';
+
+                        return (
+                            <div
+                                key={sym}
+                                className={`${styles.comparisonPriceLabel} ${isLeftScale ? styles.comparisonPriceLabelLeft : ''}`}
+                                style={{
+                                    top: data.y,
+                                    // For left scale labels, account for toolbar
+                                    ...(isLeftScale && isToolbarVisible ? { left: '48px' } : {})
+                                }}
+                            >
+                                <span
+                                    className={styles.comparisonPriceLabelSymbol}
+                                    style={{ backgroundColor: data.color }}
+                                >
+                                    {data.symbol}
+                                </span>
+                                <span
+                                    className={styles.comparisonPriceLabelPrice}
+                                    style={{ backgroundColor: data.color }}
+                                >
+                                    {formattedPrice}
+                                </span>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
 
             {/* Indicator Legend - Using reusable component */}
             <IndicatorLegend
