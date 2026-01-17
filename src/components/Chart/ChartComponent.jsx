@@ -157,17 +157,47 @@ const ChartComponent = forwardRef(({
 
             const rect = container.getBoundingClientRect();
             const rightEdge = rect.right;
+            const leftEdge = rect.left;
             const priceScaleWidth = 70; // Approximate price scale width
 
-            // Check if click is within the price scale area
+            let clickedScaleId = null;
+
+            // Check if click is within the Right price scale area
             if (e.clientX >= rightEdge - priceScaleWidth) {
+                clickedScaleId = 'right';
+            }
+            // Check if click is within the Left price scale area (if visible)
+            else if (e.clientX <= leftEdge + priceScaleWidth) {
+                const leftScale = chartRef.current?.priceScale('left');
+                if (leftScale && leftScale.options().visible) {
+                    clickedScaleId = 'left';
+                }
+            }
+
+            if (clickedScaleId) {
                 e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+
+                // Load current settings for the clicked scale
+                if (chartRef.current) {
+                    const options = chartRef.current.priceScale(clickedScaleId).options();
+                    setPriceScaleSettings(prev => ({
+                        ...prev,
+                        autoScale: options.autoScale,
+                        scaleMode: options.mode,
+                        invertScale: options.invertScale
+                    }));
+                }
+
                 setPriceScaleContextMenu({
                     visible: true,
                     x: e.clientX,
-                    y: e.clientY
+                    y: e.clientY,
+                    priceScaleId: clickedScaleId
                 });
             }
+
         };
 
         const container = chartContainerRef.current;
@@ -181,33 +211,36 @@ const ChartComponent = forwardRef(({
     // Handle price scale settings changes
     const handleScaleModeChange = useCallback((mode) => {
         setPriceScaleSettings(prev => ({ ...prev, scaleMode: mode }));
+        const scaleId = priceScaleContextMenu.priceScaleId || 'right';
 
         if (chartRef.current) {
-            chartRef.current.priceScale('right').applyOptions({
+            chartRef.current.priceScale(scaleId).applyOptions({
                 mode: mode,
             });
         }
-    }, []);
+    }, [priceScaleContextMenu.priceScaleId]);
 
     const handleAutoScaleChange = useCallback((value) => {
         setPriceScaleSettings(prev => ({ ...prev, autoScale: value }));
+        const scaleId = priceScaleContextMenu.priceScaleId || 'right';
 
         if (chartRef.current) {
-            chartRef.current.priceScale('right').applyOptions({
+            chartRef.current.priceScale(scaleId).applyOptions({
                 autoScale: value,
             });
         }
-    }, []);
+    }, [priceScaleContextMenu.priceScaleId]);
 
     const handleInvertScaleChange = useCallback((value) => {
         setPriceScaleSettings(prev => ({ ...prev, invertScale: value }));
+        const scaleId = priceScaleContextMenu.priceScaleId || 'right';
 
         if (chartRef.current) {
-            chartRef.current.priceScale('right').applyOptions({
+            chartRef.current.priceScale(scaleId).applyOptions({
                 invertScale: value,
             });
         }
-    }, []);
+    }, [priceScaleContextMenu.priceScaleId]);
 
 
     const isActuallyLoadingRef = useRef(true); // Track if we're actually loading data (not just updating indicators) - start as true on mount
@@ -1719,6 +1752,22 @@ const ChartComponent = forwardRef(({
 
         // Handle right-click - show context menu or cancel tool
         const handleContextMenu = (event) => {
+            // Check if click is in price scale area (rightmost ~70px)
+            // If so, let the specific price scale handler (bubbling phase) logic handle it
+            if (chartContainerRef.current) {
+                const rect = chartContainerRef.current.getBoundingClientRect();
+                const priceScaleWidth = 70;
+                // Ignore Right Edge
+                if (event.clientX >= rect.right - priceScaleWidth) {
+                    return;
+                }
+                // Ignore Left Edge (if visible)
+                const leftScale = chartRef.current?.priceScale('left');
+                if (leftScale && leftScale.options().visible && event.clientX <= rect.left + priceScaleWidth) {
+                    return;
+                }
+            }
+
             event.preventDefault(); // Prevent default right-click menu
             if (activeToolRef.current && activeToolRef.current !== 'cursor') {
                 if (onToolUsed) onToolUsed();
@@ -4134,7 +4183,7 @@ const ChartComponent = forwardRef(({
 
                         return (
                             <div
-                                key={sym}
+                                key={key}
                                 className={`${styles.comparisonPriceLabel} ${isLeftScale ? styles.comparisonPriceLabelLeft : ''}`}
                                 style={{
                                     top: data.y,
@@ -4320,6 +4369,7 @@ const ChartComponent = forwardRef(({
                 visible={priceScaleContextMenu.visible}
                 x={priceScaleContextMenu.x}
                 y={priceScaleContextMenu.y}
+                priceScaleId={priceScaleContextMenu.priceScaleId}
                 autoScale={priceScaleSettings.autoScale}
                 scalePriceChartOnly={priceScaleSettings.scalePriceChartOnly}
                 invertScale={priceScaleSettings.invertScale}

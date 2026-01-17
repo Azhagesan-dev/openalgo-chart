@@ -35,6 +35,7 @@ const PriceScaleContextMenu = ({
     visible,
     x,
     y,
+    priceScaleId = 'right',
     // Current settings
     autoScale = true,
     scalePriceChartOnly = false,
@@ -99,7 +100,7 @@ const PriceScaleContextMenu = ({
     const menuStyle = {
         left: x,
         top: y,
-        transform: 'translate(-100%, 0)' // Menu appears to the left of click point
+        transform: priceScaleId === 'left' ? 'none' : 'translate(-100%, 0)'
     };
 
     const handleItemClick = (callback, value) => {
