@@ -42,6 +42,7 @@ import { useAlertHandlers } from './hooks/useAlertHandlers';
 import { useToolHandlers } from './hooks/useToolHandlers';
 import { useUIHandlers } from './hooks/useUIHandlers';
 import { useANNScanner } from './hooks/useANNScanner';
+import { useToastManager } from './hooks/useToastManager';
 import { useTheme } from './context/ThemeContext';
 import { useUser } from './context/UserContext';
 import { OrderProvider } from './context/OrderContext';
@@ -192,48 +193,9 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
   // strategyConfig is now per-chart, stored in charts[].strategyConfig
   const [isOptionChainOpen, setIsOptionChainOpen] = useState(false);
   const [optionChainInitialSymbol, setOptionChainInitialSymbol] = useState(null);
-  // const [indicators, setIndicators] = useState({ sma: false, ema: false }); // Moved to charts state
-  const [toasts, setToasts] = useState([]);
-  const toastIdCounter = React.useRef(0);
-  const MAX_TOASTS = 3;
 
-  const [snapshotToast, setSnapshotToast] = useState(null);
-
-  // Toast timeout refs for cleanup
-  const snapshotToastTimeoutRef = React.useRef(null);
-
-  // Show toast helper with queue management - defined early for use in hooks
-  const showToast = (message, type = 'error', action = null) => {
-    const id = ++toastIdCounter.current;
-    const newToast = { id, message, type, action };
-
-    setToasts(prev => {
-      // Add new toast, limit to MAX_TOASTS (oldest removed first)
-      const updated = [...prev, newToast];
-      if (updated.length > MAX_TOASTS) {
-        return updated.slice(-MAX_TOASTS);
-      }
-      return updated;
-    });
-
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 5000);
-  };
-
-  // Remove a specific toast
-  const removeToast = (id) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  };
-
-  const showSnapshotToast = (message) => {
-    if (snapshotToastTimeoutRef.current) {
-      clearTimeout(snapshotToastTimeoutRef.current);
-    }
-    setSnapshotToast(message);
-    snapshotToastTimeoutRef.current = setTimeout(() => setSnapshotToast(null), 3000);
-  };
+  // Toast management (extracted to hook for cleaner code)
+  const { toasts, snapshotToast, showToast, removeToast, showSnapshotToast } = useToastManager(3);
 
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [alertPrice, setAlertPrice] = useState(null);
@@ -442,13 +404,6 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
   }, [drawingDefaults]);
 
   // Order handlers are now provided by useOrderHandlers hook
-
-  // Cleanup toast timeouts on unmount
-  useEffect(() => {
-    return () => {
-      if (snapshotToastTimeoutRef.current) clearTimeout(snapshotToastTimeoutRef.current);
-    };
-  }, []);
 
   // Cleanup all WebSocket connections on app exit (beforeunload)
   // This ensures proper unsubscription like the Python API: client.unsubscribe_ltp() + client.disconnect()
