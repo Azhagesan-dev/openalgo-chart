@@ -34,6 +34,8 @@ import { calculateRangeBreakout } from '../../utils/indicators/rangeBreakout';
 import { calculatePriceActionRange } from '../../utils/indicators/priceActionRange';
 import { calculateANNStrategy } from '../../utils/indicators/annStrategy';
 import { calculateHilengaMilenga } from '../../utils/indicators/hilengaMilenga';
+import { calculateRiskPosition, autoDetectSide } from '../../utils/indicators/riskCalculator';
+import { createRiskCalculatorPrimitive, removeRiskCalculatorPrimitive } from '../../utils/indicators/riskCalculatorChart';
 import { TPOProfilePrimitive } from '../../plugins/tpo-profile/TPOProfilePrimitive';
 import { intervalToSeconds } from '../../utils/timeframes';
 import { logger } from '../../utils/logger.js';
@@ -45,6 +47,7 @@ import ReplayControls from '../Replay/ReplayControls';
 import ReplaySlider from '../Replay/ReplaySlider';
 import PriceScaleMenu from './PriceScaleMenu';
 import { VisualTrading } from '../../plugins/visual-trading/visual-trading';
+import RiskCalculatorPanel from '../RiskCalculatorPanel/RiskCalculatorPanel';
 import { useChartResize } from '../../hooks/useChartResize';
 import { useChartDrawings } from '../../hooks/useChartDrawings';
 import { useChartAlerts } from '../../hooks/useChartAlerts';
@@ -153,6 +156,7 @@ const ChartComponent = forwardRef(({
     const rangeBreakoutSeriesRef = useRef([]); // Array of line series for range breakout high/low
     const annStrategySeriesRef = useRef(null); // ANN Strategy prediction series
     const annStrategyPaneRef = useRef(null); // ANN Strategy pane reference
+    const riskCalculatorPrimitiveRef = useRef(null); // Risk Calculator draggable primitive
     const wsRef = useRef(null);
     const chartTypeRef = useRef(chartType);
     const dataRef = useRef([]);
@@ -297,6 +301,9 @@ const ChartComponent = forwardRef(({
 
     // Indicator Legend Dropdown State
     const [indicatorDropdownOpen, setIndicatorDropdownOpen] = useState(false);
+
+    // Risk Calculator State
+    const [riskCalculatorResults, setRiskCalculatorResults] = useState(null);
 
     const [panePositions, setPanePositions] = useState({}); // Tracks vertical position of each indicator pane
     const indicatorDropdownRef = useRef(null);
@@ -946,6 +953,114 @@ const ChartComponent = forwardRef(({
             window.removeEventListener('keyup', handleKeyUp);
         };
     }, []);
+
+    // Alt+Click Risk Calculator Entry/SL Setter - keyboard event listeners
+    const isAltPressedRef = useRef(false);
+    const [clickToSetMode, setClickToSetMode] = useState(null); // 'entry' | 'stopLoss' | null
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if ((e.key === 'Alt' || e.altKey) && !isAltPressedRef.current) {
+                isAltPressedRef.current = true;
+                const riskCalcInd = indicators?.find(i => i.type === 'riskCalculator' && i.visible);
+                if (riskCalcInd && chartContainerRef.current) {
+                    chartContainerRef.current.style.cursor = 'crosshair';
+                }
+            }
+        };
+
+        const handleKeyUp = (e) => {
+            if (e.key === 'Alt' || !e.altKey) {
+                isAltPressedRef.current = false;
+                if (chartContainerRef.current && chartContainerRef.current.style.cursor === 'crosshair') {
+                    chartContainerRef.current.style.cursor = '';
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
+    }, [indicators]);
+
+    // Alt+Click Risk Calculator Entry/SL Setter - chart click handler
+    useEffect(() => {
+        if (!chartContainerRef.current || !chartRef.current || !mainSeriesRef.current) return;
+
+        const handleAltClick = (event) => {
+            if (!isAltPressedRef.current) return;
+
+            const riskCalcInd = indicators?.find(i => i.type === 'riskCalculator' && i.visible);
+            if (!riskCalcInd) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            // Get price from click coordinates
+            const rect = chartContainerRef.current.getBoundingClientRect();
+            const y = event.clientY - rect.top;
+
+            try {
+                const price = mainSeriesRef.current.coordinateToPrice(y);
+                if (!price || price <= 0) return;
+
+                const updates = { ...riskCalcInd };
+
+                // Determine which parameter to set
+                if (!riskCalcInd.entryPrice || riskCalcInd.entryPrice === 0) {
+                    // Set entry first
+                    updates.entryPrice = price;
+                    setClickToSetMode('stopLoss');
+                } else if (!riskCalcInd.stopLossPrice || riskCalcInd.stopLossPrice === 0) {
+                    // Set stop loss second
+                    updates.stopLossPrice = price;
+                    setClickToSetMode(null);
+
+                    // Auto-detect side after both entry and SL are set
+                    const detectedSide = autoDetectSide(updates.entryPrice || riskCalcInd.entryPrice, price);
+                    if (detectedSide) {
+                        updates.side = detectedSide;
+                    }
+                } else {
+                    // Both exist - toggle between entry and SL based on current mode
+                    if (clickToSetMode === 'stopLoss') {
+                        updates.stopLossPrice = price;
+                        setClickToSetMode('entry');
+                    } else {
+                        updates.entryPrice = price;
+                        setClickToSetMode('stopLoss');
+                    }
+
+                    // Auto-detect side after updating
+                    const detectedSide = autoDetectSide(
+                        updates.entryPrice || riskCalcInd.entryPrice,
+                        updates.stopLossPrice || riskCalcInd.stopLossPrice
+                    );
+                    if (detectedSide) {
+                        updates.side = detectedSide;
+                    }
+                }
+
+                // Update indicator settings
+                if (onIndicatorSettings) {
+                    onIndicatorSettings(riskCalcInd.id, updates);
+                }
+            } catch (error) {
+                console.error('Error setting price from Alt+Click:', error);
+            }
+        };
+
+        const container = chartContainerRef.current;
+        container.addEventListener('click', handleAltClick, true);
+
+        return () => {
+            container.removeEventListener('click', handleAltClick, true);
+        };
+    }, [indicators, onIndicatorSettings, clickToSetMode]);
 
     // Shift+Click Quick Measure Tool - chart click handler
     useEffect(() => {
@@ -2393,6 +2508,31 @@ const ChartComponent = forwardRef(({
             });
         }
     }, []);
+
+    // Callback for when user drags risk calculator price lines
+    const handleRiskCalculatorDrag = useCallback((lineType, newPrice) => {
+        const riskCalcInd = indicators.find(i => i.type === 'riskCalculator');
+        if (!riskCalcInd) return;
+
+        // ALWAYS preserve the current targetPrice to prevent recalculation
+        const updates = {
+            targetPrice: riskCalcInd.targetPrice || null
+        };
+
+        if (lineType === 'entry') {
+            updates.entryPrice = newPrice;
+        } else if (lineType === 'stopLoss') {
+            updates.stopLossPrice = newPrice;
+        } else if (lineType === 'target') {
+            updates.targetPrice = newPrice;
+        }
+
+        // This triggers re-calculation through onIndicatorSettings
+        if (onIndicatorSettings) {
+            onIndicatorSettings(riskCalcInd.id, updates);
+        }
+    }, [indicators, onIndicatorSettings]);
+
     const updateIndicators = useCallback((data, indicatorsArray) => {
         if (!chartRef.current) return;
 
@@ -2595,6 +2735,67 @@ const ChartComponent = forwardRef(({
             }
             rangeBreakoutSeriesRef.current = [];
             // Note: markers are handled collectively at the end of updateIndicators
+        }
+
+        // ==================== RISK CALCULATOR INDICATOR ====================
+        const riskCalculatorInd = indicatorsArray?.find(ind => ind.type === 'riskCalculator');
+        const riskCalculatorEnabled = riskCalculatorInd?.visible !== false;
+
+        if (riskCalculatorEnabled && riskCalculatorInd && mainSeriesRef.current) {
+            // Get current LTP for potential use
+            const currentLTP = dataRef.current.length > 0 ? dataRef.current[dataRef.current.length - 1]?.close : 0;
+
+            // Calculate risk position based on indicator settings
+            const params = {
+                capital: riskCalculatorInd.capital || 100000,
+                riskPercent: riskCalculatorInd.riskPercent || 2,
+                entryPrice: riskCalculatorInd.entryPrice || currentLTP || 0,
+                stopLossPrice: riskCalculatorInd.stopLossPrice || 0,
+                targetPrice: riskCalculatorInd.targetPrice || null,
+                riskRewardRatio: riskCalculatorInd.riskRewardRatio || 2,
+                side: riskCalculatorInd.side || 'BUY'
+            };
+
+            const results = calculateRiskPosition(params);
+
+            // Update state for panel display
+            setRiskCalculatorResults(results);
+
+            // Remove old primitive if exists
+            if (riskCalculatorPrimitiveRef.current) {
+                removeRiskCalculatorPrimitive({
+                    series: mainSeriesRef.current,
+                    primitiveRef: riskCalculatorPrimitiveRef
+                });
+            }
+
+            // Create new draggable primitive with updated prices
+            if (results && results.success) {
+                riskCalculatorPrimitiveRef.current = createRiskCalculatorPrimitive({
+                    series: mainSeriesRef.current,
+                    results: {
+                        ...results,
+                        showTarget: riskCalculatorInd.showTarget !== false
+                    },
+                    settings: {
+                        entryColor: riskCalculatorInd.entryColor || '#26a69a',
+                        stopLossColor: riskCalculatorInd.stopLossColor || '#ef5350',
+                        targetColor: riskCalculatorInd.targetColor || '#42a5f5',
+                        lineWidth: riskCalculatorInd.lineWidth || 2
+                    },
+                    side: riskCalculatorInd.side || 'BUY',
+                    onPriceChange: handleRiskCalculatorDrag
+                });
+            }
+        } else if (!riskCalculatorEnabled) {
+            // Remove risk calculator primitive when disabled
+            if (mainSeriesRef.current) {
+                removeRiskCalculatorPrimitive({
+                    series: mainSeriesRef.current,
+                    primitiveRef: riskCalculatorPrimitiveRef
+                });
+            }
+            setRiskCalculatorResults(null);
         }
 
         // ==================== PRICE ACTION RANGE (PAR) INDICATOR ====================
@@ -3992,6 +4193,47 @@ const ChartComponent = forwardRef(({
                 onOpenOptionChain={onOpenOptionChain}
                 onClose={() => setContextMenu({ show: false, x: 0, y: 0 })}
             />
+
+            {/* Risk Calculator Panel */}
+            {(() => {
+                const riskCalcInd = indicators?.find(ind => ind.type === 'riskCalculator');
+                const shouldShow = riskCalcInd && riskCalcInd.visible !== false && (riskCalcInd.showPanel !== false);
+
+                if (!shouldShow || !riskCalculatorResults) return null;
+
+                // Get current LTP for "Use LTP" button
+                const currentLTP = dataRef.current.length > 0 ? dataRef.current[dataRef.current.length - 1]?.close : 0;
+
+                return (
+                    <RiskCalculatorPanel
+                        results={riskCalculatorResults}
+                        params={{
+                            capital: riskCalcInd.capital || 100000,
+                            riskPercent: riskCalcInd.riskPercent || 2,
+                            entryPrice: riskCalcInd.entryPrice || 0,
+                            stopLossPrice: riskCalcInd.stopLossPrice || 0,
+                            targetPrice: riskCalcInd.targetPrice || 0,
+                            riskRewardRatio: riskCalcInd.riskRewardRatio || 2,
+                            side: riskCalcInd.side || 'BUY',
+                            showTarget: riskCalcInd.showTarget !== false
+                        }}
+                        onClose={() => {
+                            // Toggle off the showPanel setting
+                            if (onIndicatorSettings && riskCalcInd.id) {
+                                onIndicatorSettings(riskCalcInd.id, { ...riskCalcInd, showPanel: false });
+                            }
+                        }}
+                        onUpdateSettings={(updates) => {
+                            // Update indicator settings when values change in panel
+                            if (onIndicatorSettings && riskCalcInd.id) {
+                                onIndicatorSettings(riskCalcInd.id, updates);
+                            }
+                        }}
+                        ltp={currentLTP}
+                        draggable={true}
+                    />
+                );
+            })()}
 
         </div >
 
