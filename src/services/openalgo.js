@@ -153,6 +153,12 @@ class SharedWebSocketManager {
         const url = `ws://${localStorage.getItem('oa_ws_url') || DEFAULT_WS_HOST}`;
         const apiKey = localStorage.getItem('oa_apikey');
 
+        // Validate API key before connecting
+        if (!apiKey) {
+            console.error('[SharedWS] No API key found. Please configure your API key in settings.');
+            return;
+        }
+
         this._ws = new WebSocket(url);
         activeWebSockets.add({ close: () => this._ws?.close(), forceClose: () => this._ws?.close() });
 
@@ -194,18 +200,22 @@ class SharedWebSocketManager {
                 if (message.type === 'market_data' && message.symbol) {
                     const symbolKey = `${message.symbol}:${message.exchange || 'NSE'}`;
                     // Dispatch to all subscribers interested in this symbol
+                    // Callbacks are isolated with try-catch to prevent one failure from affecting others
                     for (const [id, sub] of this._subscribers) {
                         if (sub.symbols.has(symbolKey)) {
                             try {
                                 sub.callback({ ...message, data: message.data || {} });
                             } catch (err) {
-                                console.warn('[SharedWS] Callback error:', err);
+                                console.error('[SharedWS] Callback error for subscriber', id, ':', err);
+                                // Log error but continue processing other subscribers
                             }
                         }
                     }
                 }
             } catch (err) {
-                // Ignore parse errors
+                // Log JSON parse errors instead of silently ignoring
+                console.error('[SharedWS] Failed to parse WebSocket message:', err);
+                logger.debug('[SharedWS] Raw message data:', event.data);
             }
         };
 
@@ -264,7 +274,14 @@ class SharedWebSocketManager {
     _unsubscribeSymbol(symbolKey) {
         if (!this._ws || this._ws.readyState !== WebSocket.OPEN) return;
 
-        const [symbol, exchange] = symbolKey.split(':');
+        // Validate symbolKey format before splitting
+        const parts = symbolKey.split(':');
+        if (parts.length !== 2) {
+            console.warn('[SharedWS] Invalid symbolKey format:', symbolKey);
+            return;
+        }
+
+        const [symbol, exchange] = parts;
         this._ws.send(JSON.stringify({
             action: 'unsubscribe',
             symbol,
@@ -556,11 +573,16 @@ const IST_OFFSET_SECONDS = 19800; // 5 hours 30 minutes
  */
 export const subscribeToTicker = (symbol, exchange = 'NSE', interval, callback) => {
     const subscriptions = [{ symbol, exchange }];
+    const subscriptionId = `${symbol}:${exchange}`;
 
     // Use shared WebSocket to avoid connection conflicts
     return sharedWebSocket.subscribe(subscriptions, (message) => {
-        // Only process market_data messages for our symbol
-        if (message.type !== 'market_data' || message.symbol !== symbol) return;
+        // Only process market_data messages for our symbol+exchange combination
+        // Use message data instead of closure-captured variables to prevent race conditions
+        if (message.type !== 'market_data') return;
+
+        const messageId = `${message.symbol}:${message.exchange || 'NSE'}`;
+        if (messageId !== subscriptionId) return;
 
         // Data is nested in message.data
         const data = message.data || {};
@@ -593,7 +615,7 @@ export const subscribeToTicker = (symbol, exchange = 'NSE', interval, callback) 
                 volume: parseFloat(data.volume || 0),
             };
 
-            logger.debug('[WebSocket] Quote for', symbol, ':', { time: candle.time, brokerTimestamp: candle.brokerTimestamp, ltp });
+            logger.debug('[WebSocket] Quote for', message.symbol, ':', { time: candle.time, brokerTimestamp: candle.brokerTimestamp, ltp });
             callback(candle);
         }
     }, 2);

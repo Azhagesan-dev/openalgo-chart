@@ -143,7 +143,7 @@ export const getKlines = async (symbol, exchange = 'NSE', interval = '1d', limit
                     volume: parseFloat(d.volume || 0),
                 };
             }).filter(candle =>
-                candle.time > 0 && [candle.open, candle.high, candle.low, candle.close].every(value => Number.isFinite(value))
+                candle && candle.time > 0 && [candle.open, candle.high, candle.low, candle.close].every(value => Number.isFinite(value))
             );
 
             // Sort by time ascending and remove duplicates (keep the last occurrence for each timestamp)
@@ -231,7 +231,7 @@ export const getHistoricalKlines = async (symbol, exchange = 'NSE', interval = '
                     volume: parseFloat(d.volume || 0),
                 };
             }).filter(candle =>
-                candle.time > 0 && [candle.open, candle.high, candle.low, candle.close].every(value => Number.isFinite(value))
+                candle && candle.time > 0 && [candle.open, candle.high, candle.low, candle.close].every(value => Number.isFinite(value))
             );
 
             // Sort by time ascending and remove duplicates (keep the last occurrence for each timestamp)
@@ -295,11 +295,13 @@ export const getTickerPrice = async (symbol, exchange = 'NSE', signal) => {
                         if (jsonError.message) errorMessage = jsonError.message;
                         else errorMessage = errorData;
                     } catch (e) {
+                        logger.debug('[ChartData] Failed to parse error response as JSON:', e);
                         errorMessage = errorData;
                     }
                 }
             } catch (e) {
-                // Ignore read error
+                logger.debug('[ChartData] Failed to read error response:', e);
+                // Use default error message
             }
 
             throw new Error(errorMessage);

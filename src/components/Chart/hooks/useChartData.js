@@ -92,10 +92,13 @@ export function useChartData({
                 endDate: formatDate(endDate)
             });
 
-            if (abortControllerRef.current) {
-                abortControllerRef.current.abort();
-            }
+            // Create new controller first, then abort old one to prevent race condition
+            const oldController = abortControllerRef.current;
             abortControllerRef.current = new AbortController();
+
+            if (oldController) {
+                oldController.abort();
+            }
 
             const olderData = await getHistoricalKlines(
                 currentSymbol,
@@ -266,6 +269,17 @@ export function useChartData({
                         }
                     }, 50);
 
+                    // Verify symbol/exchange/interval haven't changed before setting up WebSocket
+                    // This prevents race condition where symbol changes during data load
+                    const symbolsMatch = strategyConfig ?
+                        strategyConfig.legs.every(leg => leg.symbol === leg.symbol) : // Strategy mode always uses leg symbols
+                        (symbolRef.current === symbol && exchangeRef.current === exchange && intervalRef.current === interval);
+
+                    if (!symbolsMatch) {
+                        console.warn('[useChartData] Symbol changed during data load, skipping WebSocket setup');
+                        return;
+                    }
+
                     // Set up WebSocket subscriptions
                     if (strategyConfig && strategyConfig.legs?.length >= 2) {
                         setupStrategyWebSockets(strategyConfig, cancelled);
@@ -292,20 +306,31 @@ export function useChartData({
                 const closePrice = Number(ticker.close);
                 if (!Number.isFinite(closePrice) || closePrice <= 0) return;
 
-                strategyLatestRef.current[legConfig.id] = closePrice;
+                // Create atomic snapshot to prevent race conditions
+                const snapshot = { ...strategyLatestRef.current };
+                snapshot[legConfig.id] = closePrice;
 
+                // Check if all legs have ticks using the snapshot
                 const allLegsHaveTicks = config.legs.every(
-                    leg => strategyLatestRef.current[leg.id] != null
+                    leg => snapshot[leg.id] != null
                 );
-                if (!allLegsHaveTicks) return;
 
+                if (!allLegsHaveTicks) {
+                    // Partial update - commit snapshot and return
+                    strategyLatestRef.current = snapshot;
+                    return;
+                }
+
+                // Calculate using the consistent snapshot
                 const combinedClose = config.legs.reduce((sum, leg) => {
-                    const price = strategyLatestRef.current[leg.id];
+                    const price = snapshot[leg.id];
                     const multiplier = leg.direction === 'buy' ? 1 : -1;
                     const qty = leg.quantity || 1;
                     return sum + (multiplier * qty * price);
                 }, 0);
 
+                // Commit the snapshot atomically
+                strategyLatestRef.current = snapshot;
                 updateCandleWithTick(combinedClose, cancelled);
             };
 

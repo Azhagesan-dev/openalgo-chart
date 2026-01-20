@@ -76,7 +76,10 @@ export const useChartDrawings = (manager, symbol, exchange, interval, onDrawings
 
         return () => {
             if (saveTimeout) clearTimeout(saveTimeout);
-            // Cleanup listeners if LineToolManager supports it (it currently might not, but this is best practice)
+            // Unset the drawings changed callback to prevent memory leaks
+            if (manager && manager.setOnDrawingsChanged) {
+                manager.setOnDrawingsChanged(null);
+            }
         };
     }, [manager, symbol, exchange, interval, onDrawingsSync]);
 };

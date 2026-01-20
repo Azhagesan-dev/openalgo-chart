@@ -189,10 +189,21 @@ const ChartComponent = forwardRef(({
     const strategyDataRef = useRef({}); // Map: legId -> data array
     const strategyLatestRef = useRef({}); // Map: legId -> latest price
 
+    // Component mount state for cleanup safety
+    const mountedRef = useRef(true);
+
     // Replay State
     const [isReplayMode, setIsReplayMode] = useState(false);
     const isReplayModeRef = useRef(false); // Ref to track replay mode in callbacks
     useEffect(() => { isReplayModeRef.current = isReplayMode; }, [isReplayMode]);
+
+    // Track component mounted state
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+        };
+    }, []);
 
     const [isPlaying, setIsPlaying] = useState(false);
     const [replaySpeed, setReplaySpeed] = useState(1);
@@ -455,7 +466,7 @@ const ChartComponent = forwardRef(({
                     replayIndexRef.current = startIndex;
                     // Initialize replay data display - show all candles initially
                     setTimeout(() => {
-                        if (updateReplayDataRef.current) {
+                        if (mountedRef.current && updateReplayDataRef.current) {
                             updateReplayDataRef.current(startIndex, false);
                         }
                     }, 0);
@@ -490,7 +501,11 @@ const ChartComponent = forwardRef(({
 
                 // Notify parent about replay mode change
                 if (onReplayModeChange) {
-                    setTimeout(() => onReplayModeChange(newMode), 0);
+                    setTimeout(() => {
+                        if (mountedRef.current) {
+                            onReplayModeChange(newMode);
+                        }
+                    }, 0);
                 }
 
                 return newMode;
@@ -1525,8 +1540,47 @@ const ChartComponent = forwardRef(({
         chartRef.current = chart;
         setChartInstance(chart);
 
+        // DEBUG: Expose chart and indicator management to window for browser console testing
+        if (typeof window !== 'undefined') {
+            window.__indicatorStore__ = {
+                getState: () => ({
+                    indicators: indicators || [],
+                    addIndicator: (indicator) => {
+                        if (onIndicatorSettings) {
+                            // Add indicator via callback
+                            const id = `ind_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                            const newIndicator = { ...indicator, id, visible: indicator.visible !== false };
+                            onIndicatorSettings(id, indicator.type, indicator.settings);
+                        }
+                    },
+                    removeIndicator: (id) => {
+                        if (onIndicatorRemove) {
+                            onIndicatorRemove(id);
+                        }
+                    },
+                    updateIndicator: (id, updates) => {
+                        if (onIndicatorSettings) {
+                            const indicator = (indicators || []).find(ind => ind.id === id);
+                            if (indicator) {
+                                onIndicatorSettings(id, indicator.type, { ...indicator.settings, ...updates });
+                            }
+                        }
+                    }
+                })
+            };
 
+            // Expose chart instance and maps
+            if (chartContainerRef.current) {
+                chartContainerRef.current.__chartInstance__ = chart;
+                chartContainerRef.current.__indicatorTypesMap__ = indicatorTypesMap;
+                chartContainerRef.current.__indicatorSeriesMap__ = indicatorSeriesMap;
+                chartContainerRef.current.__indicatorPanesMap__ = indicatorPanesMap;
+                chartContainerRef.current.__mainSeriesRef__ = mainSeriesRef.current;
+            }
 
+            // Also expose on window for easy access
+            window.chartInstance = chart;
+        }
 
         // Load older historical data when user scrolls back to the oldest loaded candle
         const loadOlderData = async () => {
@@ -1802,6 +1856,22 @@ const ChartComponent = forwardRef(({
                 lineToolManagerRef.current = null;
             }
 
+            // Detach primitives before removing chart to prevent memory leaks
+            if (mainSeriesRef.current) {
+                try {
+                    if (visualTradingRef.current) {
+                        mainSeriesRef.current.detachPrimitive(visualTradingRef.current);
+                        visualTradingRef.current = null;
+                    }
+                    if (seriesMarkersRef.current) {
+                        mainSeriesRef.current.detachPrimitive(seriesMarkersRef.current);
+                        seriesMarkersRef.current = null;
+                    }
+                } catch (error) {
+                    console.warn('Failed to detach primitives', error);
+                }
+            }
+
             try {
                 if (wsRef.current) wsRef.current.close();
             } catch (error) {
@@ -2043,7 +2113,7 @@ const ChartComponent = forwardRef(({
                     applyDefaultCandlePosition(transformedData.length, DEFAULT_CANDLE_WINDOW);
 
                     setTimeout(() => {
-                        if (!cancelled) {
+                        if (!cancelled && mountedRef.current) {
                             isActuallyLoadingRef.current = false;
                             setIsLoading(false);
                             updateAxisLabel();
@@ -2536,6 +2606,10 @@ const ChartComponent = forwardRef(({
     }, [indicators, onIndicatorSettings]);
 
     const updateIndicators = useCallback((data, indicatorsArray) => {
+        console.log('[DEBUG] updateIndicators CALLED');
+        console.log('[DEBUG] Indicators param:', indicatorsArray?.length, 'indicators');
+        console.log('[DEBUG] Indicator IDs param:', indicatorsArray?.map(i => i.id));
+
         if (!chartRef.current) return;
 
         const canAddSeries = chartReadyRef.current;
@@ -2590,6 +2664,8 @@ const ChartComponent = forwardRef(({
 
             });
         }
+
+        console.log('[DEBUG] validIds constructed with', validIds.size, 'IDs:', Array.from(validIds));
 
         // ========== FIRST RED CANDLE INDICATOR (5-min only) ==========
         const firstCandleInd = indicatorsArray?.find(ind => ind.type === 'firstCandle');
@@ -2662,10 +2738,15 @@ const ChartComponent = forwardRef(({
             }
         } else if (!firstCandleEnabled) {
             // Remove first candle series when disabled
+            console.log('[MANUAL CLEANUP] First Candle manual cleanup triggered. Series count:', firstCandleSeriesRef.current.length);
             for (const series of firstCandleSeriesRef.current) {
-                try { chartRef.current.removeSeries(series); } catch (e) { /* ignore */ }
+                try {
+                    console.log('[MANUAL CLEANUP] Removing First Candle series');
+                    chartRef.current.removeSeries(series);
+                } catch (e) { /* ignore */ }
             }
             firstCandleSeriesRef.current = [];
+            console.log('[MANUAL CLEANUP] First Candle array cleared');
         }
 
         // ========== RANGE BREAKOUT INDICATOR ==========
@@ -2743,10 +2824,15 @@ const ChartComponent = forwardRef(({
             }
         } else if (!rangeBreakoutEnabled) {
             // Remove range breakout series when disabled
+            console.log('[MANUAL CLEANUP] Range Breakout manual cleanup triggered. Series count:', rangeBreakoutSeriesRef.current.length);
             for (const series of rangeBreakoutSeriesRef.current) {
-                try { chartRef.current.removeSeries(series); } catch (e) { /* ignore */ }
+                try {
+                    console.log('[MANUAL CLEANUP] Removing Range Breakout series');
+                    chartRef.current.removeSeries(series);
+                } catch (e) { /* ignore */ }
             }
             rangeBreakoutSeriesRef.current = [];
+            console.log('[MANUAL CLEANUP] Range Breakout array cleared');
             // Note: markers are handled collectively at the end of updateIndicators
         }
 
@@ -2881,10 +2967,15 @@ const ChartComponent = forwardRef(({
             }
         } else if (!parEnabled) {
             // Remove PAR series when disabled
+            console.log('[MANUAL CLEANUP] PAR manual cleanup triggered. Series count:', priceActionRangeSeriesRef.current.length);
             for (const series of priceActionRangeSeriesRef.current) {
-                try { chartRef.current.removeSeries(series); } catch (e) { /* ignore */ }
+                try {
+                    console.log('[MANUAL CLEANUP] Removing PAR series');
+                    chartRef.current.removeSeries(series);
+                } catch (e) { /* ignore */ }
             }
             priceActionRangeSeriesRef.current = [];
+            console.log('[MANUAL CLEANUP] PAR array cleared');
         }
 
         // --- UNIFIED CLEANUP LOGIC ---
@@ -2894,6 +2985,20 @@ const ChartComponent = forwardRef(({
             if (!validIds.has(id)) {
                 idsToRemove.push(id);
             }
+        }
+
+        // DEBUG: Log cleanup detection
+        console.log('[CLEANUP DEBUG] ===== CLEANUP DETECTION =====');
+        console.log('[CLEANUP DEBUG] Valid IDs from indicators:', Array.from(validIds));
+        console.log('[CLEANUP DEBUG] Series map keys (existing):', Array.from(indicatorSeriesMap.current.keys()));
+        console.log('[CLEANUP DEBUG] IDs to remove:', idsToRemove);
+        console.log('[CLEANUP DEBUG] Types map entries:', Array.from(indicatorTypesMap.current.entries()));
+
+        if (idsToRemove.length > 0) {
+            console.log('[CLEANUP] Detected indicators to remove:', idsToRemove);
+            console.log('[CLEANUP] Valid IDs:', Array.from(validIds));
+            console.log('[CLEANUP] Series map keys:', Array.from(indicatorSeriesMap.current.keys()));
+            console.log('[CLEANUP] Types map:', Array.from(indicatorTypesMap.current.entries()));
         }
 
         // Prepare cleanup context with all necessary references
@@ -2913,7 +3018,9 @@ const ChartComponent = forwardRef(({
 
         // Execute unified cleanup using metadata-driven engine
         if (idsToRemove.length > 0) {
+            console.log('[CLEANUP] Calling cleanupIndicators with', idsToRemove.length, 'indicators');
             cleanupIndicators(idsToRemove, indicatorTypesMap.current, cleanupContext);
+            console.log('[CLEANUP] Cleanup complete');
         }
 
         // Set all collected markers on the main candlestick series using lightweight-charts v5 API
@@ -3051,6 +3158,9 @@ const ChartComponent = forwardRef(({
 
     // Separate effect for indicators to prevent data reload
     useEffect(() => {
+        console.log('[DEBUG] Indicators effect TRIGGERED. Count:', indicators?.length);
+        console.log('[DEBUG] Indicator IDs:', indicators?.map(i => i.id));
+
         if (dataRef.current.length > 0) {
             // Update indicators with current data
             try {
@@ -3459,8 +3569,10 @@ const ChartComponent = forwardRef(({
         if (preserveView && currentVisibleRange && chartRef.current) {
             try {
                 setTimeout(() => {
-                    const timeScale = chartRef.current.timeScale();
-                    timeScale.setVisibleLogicalRange(currentVisibleRange);
+                    if (mountedRef.current && chartRef.current) {
+                        const timeScale = chartRef.current.timeScale();
+                        timeScale.setVisibleLogicalRange(currentVisibleRange);
+                    }
                 }, 0);
             } catch (e) {
                 // Ignore errors
@@ -3516,7 +3628,7 @@ const ChartComponent = forwardRef(({
             // Restore the visible range to maintain zoom level
             // Use setTimeout to ensure data update has completed
             setTimeout(() => {
-                if (chartRef.current && fullDataRef.current && fullDataRef.current.length > 0) {
+                if (mountedRef.current && chartRef.current && fullDataRef.current && fullDataRef.current.length > 0) {
                     try {
                         const timeScale = chartRef.current.timeScale();
 
@@ -3684,22 +3796,24 @@ const ChartComponent = forwardRef(({
                 // Restore visible range after data update to prevent view jumping
                 if (currentVisibleRange && chartRef.current) {
                     setTimeout(() => {
-                        try {
-                            const timeScale = chartRef.current.timeScale();
-                            // Adjust the range to end at the clicked candle if needed
-                            const clickedCandleTime = fullDataRef.current[clickedIndex]?.time;
-                            if (clickedCandleTime && currentVisibleRange.to > clickedCandleTime) {
-                                // The current view extends beyond the clicked time, adjust it
-                                const rangeWidth = currentVisibleRange.to - currentVisibleRange.from;
-                                const newTo = clickedCandleTime;
-                                const newFrom = newTo - rangeWidth;
-                                timeScale.setVisibleRange({ from: newFrom, to: newTo });
-                            } else {
-                                // Keep the current view
-                                timeScale.setVisibleRange(currentVisibleRange);
+                        if (mountedRef.current && chartRef.current) {
+                            try {
+                                const timeScale = chartRef.current.timeScale();
+                                // Adjust the range to end at the clicked candle if needed
+                                const clickedCandleTime = fullDataRef.current[clickedIndex]?.time;
+                                if (clickedCandleTime && currentVisibleRange.to > clickedCandleTime) {
+                                    // The current view extends beyond the clicked time, adjust it
+                                    const rangeWidth = currentVisibleRange.to - currentVisibleRange.from;
+                                    const newTo = clickedCandleTime;
+                                    const newFrom = newTo - rangeWidth;
+                                    timeScale.setVisibleRange({ from: newFrom, to: newTo });
+                                } else {
+                                    // Keep the current view
+                                    timeScale.setVisibleRange(currentVisibleRange);
+                                }
+                            } catch (e) {
+                                // Ignore
                             }
-                        } catch (e) {
-                            // Ignore
                         }
                     }, 0);
                 }
@@ -3842,7 +3956,7 @@ const ChartComponent = forwardRef(({
 
                             // Set again after a short delay to override any auto-zoom
                             setTimeout(() => {
-                                if (chartRef.current) {
+                                if (mountedRef.current && chartRef.current) {
                                     try {
                                         chartRef.current.timeScale().setVisibleRange(targetRange);
                                     } catch (e) {
@@ -3853,7 +3967,7 @@ const ChartComponent = forwardRef(({
 
                             // Set one more time after data update completes
                             setTimeout(() => {
-                                if (chartRef.current) {
+                                if (mountedRef.current && chartRef.current) {
                                     try {
                                         chartRef.current.timeScale().setVisibleRange(targetRange);
                                     } catch (e) {
