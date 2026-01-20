@@ -13,6 +13,8 @@ const STORAGE_KEY = 'optionChainCache';
 const noFOSymbolsCache = new Set();
 const NO_FO_STORAGE_KEY = 'noFOSymbolsCache';
 const NO_FO_CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
+// MEDIUM FIX ML-10: Add max size to prevent unbounded growth
+const MAX_NO_FO_CACHE_SIZE = 500; // Reasonable limit for non-F&O symbols
 
 // Rate limit protection
 let lastApiCallTime = 0;
@@ -111,6 +113,14 @@ export const isNonFOSymbol = (symbol) => noFOSymbolsCache.has(symbol?.toUpperCas
 export const markAsNonFOSymbol = (symbol) => {
     const upperSymbol = symbol?.toUpperCase();
     if (upperSymbol) {
+        // MEDIUM FIX ML-10: Evict oldest entry if cache is at capacity
+        if (noFOSymbolsCache.size >= MAX_NO_FO_CACHE_SIZE) {
+            // Convert Set to Array and remove first (oldest) entry
+            const entries = Array.from(noFOSymbolsCache);
+            const toRemove = entries[0];
+            noFOSymbolsCache.delete(toRemove);
+            console.log('[OptionChainCache] Evicted oldest non-F&O symbol:', toRemove);
+        }
         noFOSymbolsCache.add(upperSymbol);
         saveNoFOCacheToStorage();
         console.log('[OptionChainCache] Marked as non-F&O symbol:', upperSymbol);
