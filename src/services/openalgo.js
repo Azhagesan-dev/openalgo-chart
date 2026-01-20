@@ -81,12 +81,17 @@ class SharedWebSocketManager {
         const subscriberId = this._nextId++;
         const symbolKeys = symbols.map(s => `${s.symbol}:${s.exchange || 'NSE'}`);
 
-        this._subscribers.set(subscriberId, {
+        // CRITICAL FIX RC-1: Add ready flag to prevent race condition
+        // Messages can arrive before subscription is fully initialized
+        const subscription = {
             symbols: new Set(symbolKeys),
             symbolObjs: symbols,
             callback,
-            mode
-        });
+            mode,
+            ready: false  // Set to true after subscription is complete
+        };
+
+        this._subscribers.set(subscriberId, subscription);
 
         // Add symbols to global set
         const newSymbols = [];
@@ -105,6 +110,9 @@ class SharedWebSocketManager {
         if (this._authenticated && newSymbols.length > 0) {
             this._subscribeSymbols(newSymbols);
         }
+
+        // Mark subscription as ready - safe to dispatch messages now
+        subscription.ready = true;
 
         // Return unsubscribe function
         return {
@@ -202,7 +210,9 @@ class SharedWebSocketManager {
                     // Dispatch to all subscribers interested in this symbol
                     // Callbacks are isolated with try-catch to prevent one failure from affecting others
                     for (const [id, sub] of this._subscribers) {
-                        if (sub.symbols.has(symbolKey)) {
+                        // CRITICAL FIX RC-1: Check ready flag before dispatching
+                        // Prevents race where messages arrive before subscription fully initialized
+                        if (sub.ready && sub.symbols.has(symbolKey)) {
                             try {
                                 sub.callback({ ...message, data: message.data || {} });
                             } catch (err) {

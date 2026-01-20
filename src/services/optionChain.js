@@ -238,8 +238,9 @@ export const getOptionChain = async (underlying, exchange = 'NFO', expiryDate = 
 
                 return {
                     strike,
-                    ce: row.ce ? {
-                        symbol: row.ce.symbol,
+                    // CRITICAL FIX BUG-1: Add additional null checks for nested properties
+                    ce: (row.ce && typeof row.ce === 'object') ? {
+                        symbol: row.ce.symbol || '',
                         ltp: ceLtp,
                         prevClose: safeParseFloat(row.ce.prev_close),
                         open: safeParseFloat(row.ce.open),
@@ -249,11 +250,11 @@ export const getOptionChain = async (underlying, exchange = 'NFO', expiryDate = 
                         ask: safeParseFloat(row.ce.ask),
                         oi: safeParseInt(row.ce.oi),
                         volume: safeParseInt(row.ce.volume),
-                        label: row.ce.label, // ITM, ATM, OTM
+                        label: row.ce.label || '', // ITM, ATM, OTM
                         lotSize: safeParseInt(row.ce.lotsize || row.ce.lot_size)
                     } : null,
-                    pe: row.pe ? {
-                        symbol: row.pe.symbol,
+                    pe: (row.pe && typeof row.pe === 'object') ? {
+                        symbol: row.pe.symbol || '',
                         ltp: peLtp,
                         prevClose: safeParseFloat(row.pe.prev_close),
                         open: safeParseFloat(row.pe.open),
@@ -263,7 +264,7 @@ export const getOptionChain = async (underlying, exchange = 'NFO', expiryDate = 
                         ask: safeParseFloat(row.pe.ask),
                         oi: safeParseInt(row.pe.oi),
                         volume: safeParseInt(row.pe.volume),
-                        label: row.pe.label, // ITM, ATM, OTM
+                        label: row.pe.label || '', // ITM, ATM, OTM
                         lotSize: safeParseInt(row.pe.lotsize || row.pe.lot_size)
                     } : null,
                     straddlePremium

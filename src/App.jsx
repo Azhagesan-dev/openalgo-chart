@@ -832,7 +832,17 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
   // Cleanup on unmount to prevent memory leak from orphaned interval
   useEffect(() => {
     initTimeService();
-    return () => destroyTimeService();
+
+    // Add beforeunload handler for page refresh/close scenarios (CRITICAL FIX ML-1)
+    const handleBeforeUnload = () => {
+      destroyTimeService();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      destroyTimeService();
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
   }, []);
 
   // Persist multiple watchlists

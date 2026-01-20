@@ -190,14 +190,15 @@ const calculateTPOProfile = (data, options = {}) => {
             let downIndex = pocIndex + 1;
 
             while (vaTpos < targetTpos && (upIndex >= 0 || downIndex < priceLevelStats.length)) {
-                const upTpos = upIndex >= 0 ? priceLevelStats[upIndex].count : 0;
-                const downTpos = downIndex < priceLevelStats.length ? priceLevelStats[downIndex].count : 0;
+                // CRITICAL FIX BUG-2: Additional bounds validation to prevent negative index access
+                const upTpos = (upIndex >= 0 && upIndex < priceLevelStats.length) ? priceLevelStats[upIndex].count : 0;
+                const downTpos = (downIndex >= 0 && downIndex < priceLevelStats.length) ? priceLevelStats[downIndex].count : 0;
 
-                if (upTpos >= downTpos && upIndex >= 0) {
+                if (upTpos >= downTpos && upIndex >= 0 && upIndex < priceLevelStats.length) {
                     vaTpos += upTpos;
                     vaHighPrice = priceLevelStats[upIndex].price;
                     upIndex--;
-                } else if (downIndex < priceLevelStats.length) {
+                } else if (downIndex >= 0 && downIndex < priceLevelStats.length) {
                     vaTpos += downTpos;
                     vaLowPrice = priceLevelStats[downIndex].price;
                     downIndex++;
