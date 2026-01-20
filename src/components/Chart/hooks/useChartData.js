@@ -44,6 +44,8 @@ export function useChartData({
     const hasMoreHistoricalDataRef = useRef(true);
     const oldestLoadedTimeRef = useRef(null);
     const abortControllerRef = useRef(null);
+    // HIGH FIX RC-2: Request ID pattern to discard stale scroll-back responses
+    const scrollBackRequestIdRef = useRef(0);
 
     // Symbol refs for closures
     const symbolRef = useRef(symbol);
@@ -62,6 +64,9 @@ export function useChartData({
         if (isReplayModeRef?.current) return;
 
         isLoadingOlderDataRef.current = true;
+
+        // HIGH FIX RC-2: Generate unique request ID to detect stale responses
+        const currentRequestId = ++scrollBackRequestIdRef.current;
 
         try {
             const oldestTime = oldestLoadedTimeRef.current;
@@ -108,6 +113,12 @@ export function useChartData({
                 formatDate(endDate),
                 abortControllerRef.current.signal
             );
+
+            // HIGH FIX RC-2: Check if this response is still valid (no newer request started)
+            if (currentRequestId !== scrollBackRequestIdRef.current) {
+                logger.debug('[ScrollBack] Discarding stale response, request', currentRequestId, 'superseded by', scrollBackRequestIdRef.current);
+                return;
+            }
 
             if (!olderData || olderData.length === 0) {
                 logger.debug('[ScrollBack] No more historical data available');
@@ -362,8 +373,12 @@ export function useChartData({
 
         // Update candle with tick data
         const updateCandleWithTick = (closePrice, cancelled, tickVolume = 0) => {
-            const currentData = dataRef.current;
-            if (!currentData || currentData.length === 0) return;
+            const originalData = dataRef.current;
+            if (!originalData || originalData.length === 0) return;
+
+            // HIGH FIX RC-3: Create snapshot to prevent mutation race with loadOlderData
+            const originalLength = originalData.length;
+            const currentData = [...originalData];
 
             const intervalSeconds = intervalToSeconds(interval);
             if (!Number.isFinite(intervalSeconds) || intervalSeconds <= 0) return;
@@ -400,7 +415,15 @@ export function useChartData({
                 currentData[lastIndex] = candle;
             }
 
-            dataRef.current = currentData;
+            // HIGH FIX RC-3: Verify no concurrent prepend before committing
+            // If loadOlderData prepended, the length will have changed
+            if (dataRef.current.length === originalLength) {
+                dataRef.current = currentData;
+            } else {
+                // Concurrent modification detected, discard this update
+                logger.debug('[WebSocket] Discarding tick update due to concurrent data modification');
+                return;
+            }
             const currentChartType = chartTypeRef.current;
             const transformedCandle = transformData([candle], currentChartType)[0];
 

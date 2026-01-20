@@ -150,6 +150,12 @@ const ChartComponent = forwardRef(({
 
     const chartReadyRef = useRef(false); // Track when chart is fully stable and ready for indicator additions
     const lineToolManagerRef = useRef(null);
+    // HIGH FIX ML-3: Store alert subscriptions for cleanup
+    const alertSubscriptionsRef = useRef({
+        alertsChanged: null,
+        alertTriggered: null,
+        priceScaleClicked: null
+    });
     const priceScaleTimerRef = useRef(null); // Ref for the candle countdown timer
     const tpoProfileRef = useRef(null); // Ref for TPO Profile primitive
     const oiPriceLinesRef = useRef({ maxCallOI: null, maxPutOI: null, maxPain: null }); // Refs for OI price lines
@@ -1349,7 +1355,8 @@ const ChartComponent = forwardRef(({
                 // Bridge internal alert list out to React so the Alerts tab
                 // can show alerts created from the chart-side UI.
                 if (userAlerts && typeof userAlerts.alertsChanged === 'function' && typeof userAlerts.alerts === 'function' && typeof onAlertsSync === 'function') {
-                    userAlerts.alertsChanged().subscribe(() => {
+                    // HIGH FIX ML-3: Store subscription for cleanup
+                    alertSubscriptionsRef.current.alertsChanged = userAlerts.alertsChanged().subscribe(() => {
                         try {
                             const rawAlerts = userAlerts.alerts() || [];
                             const mapped = rawAlerts.map(a => ({
@@ -1376,7 +1383,8 @@ const ChartComponent = forwardRef(({
                 // Also bridge trigger events so the app can mark alerts as Triggered
                 // and write log entries when the internal primitive fires.
                 if (userAlerts && typeof userAlerts.alertTriggered === 'function' && typeof onAlertTriggered === 'function') {
-                    userAlerts.alertTriggered().subscribe((evt) => {
+                    // HIGH FIX ML-3: Store subscription for cleanup
+                    alertSubscriptionsRef.current.alertTriggered = userAlerts.alertTriggered().subscribe((evt) => {
                         try {
                             onAlertTriggered({
                                 externalId: evt.alertId,
@@ -1393,7 +1401,8 @@ const ChartComponent = forwardRef(({
 
                 // Subscribe to price scale + button clicks to show context menu
                 if (userAlerts && typeof userAlerts.priceScaleClicked === 'function') {
-                    userAlerts.priceScaleClicked().subscribe((evt) => {
+                    // HIGH FIX ML-3: Store subscription for cleanup
+                    alertSubscriptionsRef.current.priceScaleClicked = userAlerts.priceScaleClicked().subscribe((evt) => {
                         try {
                             setPriceScaleMenu({
                                 visible: true,
@@ -1829,6 +1838,13 @@ const ChartComponent = forwardRef(({
             window.chartInstance = null;
             window.seriesInstance = null;
 
+            // HIGH FIX ML-2: Unsubscribe crosshair move listener
+            try {
+                chart.unsubscribeCrosshairMove(handleCrosshairMove);
+            } catch (e) {
+                console.warn('Failed to unsubscribe crosshair move', e);
+            }
+
             try {
                 chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleTimeRangeChange);
             } catch (e) {
@@ -1848,6 +1864,24 @@ const ChartComponent = forwardRef(({
             // Destroy lineToolManager BEFORE chart.remove() to prevent "Object is disposed" errors
             // The line-tools plugin holds a reference to the chart and may try to call requestUpdate()
             if (lineToolManagerRef.current) {
+                // HIGH FIX ML-3: Unsubscribe alert event listeners before destroying manager
+                try {
+                    if (alertSubscriptionsRef.current.alertsChanged) {
+                        alertSubscriptionsRef.current.alertsChanged.unsubscribe(lineToolManagerRef.current);
+                        alertSubscriptionsRef.current.alertsChanged = null;
+                    }
+                    if (alertSubscriptionsRef.current.alertTriggered) {
+                        alertSubscriptionsRef.current.alertTriggered.unsubscribe(lineToolManagerRef.current);
+                        alertSubscriptionsRef.current.alertTriggered = null;
+                    }
+                    if (alertSubscriptionsRef.current.priceScaleClicked) {
+                        alertSubscriptionsRef.current.priceScaleClicked.unsubscribe(lineToolManagerRef.current);
+                        alertSubscriptionsRef.current.priceScaleClicked = null;
+                    }
+                } catch (error) {
+                    console.warn('Failed to unsubscribe alert listeners', error);
+                }
+
                 try {
                     lineToolManagerRef.current.destroy();
                 } catch (error) {
@@ -1968,6 +2002,24 @@ const ChartComponent = forwardRef(({
                     }
                 } catch (err) {
                     console.warn('[Alerts] Failed to save alerts in cleanup:', err);
+                }
+
+                // HIGH FIX ML-3: Unsubscribe alert event listeners before clearing manager
+                try {
+                    if (alertSubscriptionsRef.current.alertsChanged) {
+                        alertSubscriptionsRef.current.alertsChanged.unsubscribe(lineToolManagerRef.current);
+                        alertSubscriptionsRef.current.alertsChanged = null;
+                    }
+                    if (alertSubscriptionsRef.current.alertTriggered) {
+                        alertSubscriptionsRef.current.alertTriggered.unsubscribe(lineToolManagerRef.current);
+                        alertSubscriptionsRef.current.alertTriggered = null;
+                    }
+                    if (alertSubscriptionsRef.current.priceScaleClicked) {
+                        alertSubscriptionsRef.current.priceScaleClicked.unsubscribe(lineToolManagerRef.current);
+                        alertSubscriptionsRef.current.priceScaleClicked = null;
+                    }
+                } catch (err) {
+                    console.warn('Failed to unsubscribe alert listeners before chart type switch', err);
                 }
 
                 try {
