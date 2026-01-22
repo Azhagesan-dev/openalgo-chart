@@ -306,13 +306,13 @@ export const updateIchimokuSeries = (series, ind, data, isVisible) => {
 export const updatePivotPointsSeries = (series, ind, data, isVisible) => {
     const lineWidth = ind.lineWidth || 1;
 
-    if (series.pivot) series.pivot.applyOptions({ visible: isVisible, color: ind.pivotColor || '#FF9800', lineWidth });
-    if (series.r1) series.r1.applyOptions({ visible: isVisible, color: ind.resistanceColor || '#EF5350', lineWidth });
-    if (series.r2) series.r2.applyOptions({ visible: isVisible, color: ind.resistanceColor || '#EF5350', lineWidth });
-    if (series.r3) series.r3.applyOptions({ visible: isVisible, color: ind.resistanceColor || '#EF5350', lineWidth });
-    if (series.s1) series.s1.applyOptions({ visible: isVisible, color: ind.supportColor || '#26A69A', lineWidth });
-    if (series.s2) series.s2.applyOptions({ visible: isVisible, color: ind.supportColor || '#26A69A', lineWidth });
-    if (series.s3) series.s3.applyOptions({ visible: isVisible, color: ind.supportColor || '#26A69A', lineWidth });
+    if (series.pivot) series.pivot.applyOptions({ visible: isVisible, color: ind.pivotColor || '#FF9800', lineWidth, title: ind.showTitle !== false ? 'P' : '' });
+    if (series.r1) series.r1.applyOptions({ visible: isVisible, color: ind.resistanceColor || '#EF5350', lineWidth, title: ind.showTitle !== false ? 'R1' : '' });
+    if (series.r2) series.r2.applyOptions({ visible: isVisible, color: ind.resistanceColor || '#EF5350', lineWidth, title: ind.showTitle !== false ? 'R2' : '' });
+    if (series.r3) series.r3.applyOptions({ visible: isVisible, color: ind.resistanceColor || '#EF5350', lineWidth, title: ind.showTitle !== false ? 'R3' : '' });
+    if (series.s1) series.s1.applyOptions({ visible: isVisible, color: ind.supportColor || '#26A69A', lineWidth, title: ind.showTitle !== false ? 'S1' : '' });
+    if (series.s2) series.s2.applyOptions({ visible: isVisible, color: ind.supportColor || '#26A69A', lineWidth, title: ind.showTitle !== false ? 'S2' : '' });
+    if (series.s3) series.s3.applyOptions({ visible: isVisible, color: ind.supportColor || '#26A69A', lineWidth, title: ind.showTitle !== false ? 'S3' : '' });
 
     const val = calculatePivotPoints(data, ind.pivotType || 'classic', ind.timeframe || 'daily');
     if (val) {

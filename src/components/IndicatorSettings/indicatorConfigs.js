@@ -329,6 +329,7 @@ export const indicatorConfigs = {
             { key: 'resistanceColor', label: 'Resistance', type: 'color', default: '#EF5350' },
             { key: 'supportColor', label: 'Support', type: 'color', default: '#26A69A' },
             { key: 'lineWidth', label: 'Line Width', type: 'number', min: 1, max: 5, default: 1 },
+            { key: 'showTitle', label: 'Show Title', type: 'boolean', default: true },
         ],
     },
 

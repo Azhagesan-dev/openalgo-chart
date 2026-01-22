@@ -410,7 +410,7 @@ export const createPivotPointsSeries = (chart, ind) => {
             lineStyle: 2,
             priceLineVisible: false,
             lastValueVisible: true,
-            title: 'P'
+            title: ind.showTitle !== false ? 'P' : ''
         }),
         r1: chart.addSeries(LineSeries, {
             color: resistanceColor,
@@ -418,7 +418,7 @@ export const createPivotPointsSeries = (chart, ind) => {
             lineStyle: 2,
             priceLineVisible: false,
             lastValueVisible: true,
-            title: 'R1'
+            title: ind.showTitle !== false ? 'R1' : ''
         }),
         r2: chart.addSeries(LineSeries, {
             color: resistanceColor,
@@ -426,7 +426,7 @@ export const createPivotPointsSeries = (chart, ind) => {
             lineStyle: 2,
             priceLineVisible: false,
             lastValueVisible: true,
-            title: 'R2'
+            title: ind.showTitle !== false ? 'R2' : ''
         }),
         r3: chart.addSeries(LineSeries, {
             color: resistanceColor,
@@ -434,7 +434,7 @@ export const createPivotPointsSeries = (chart, ind) => {
             lineStyle: 2,
             priceLineVisible: false,
             lastValueVisible: true,
-            title: 'R3'
+            title: ind.showTitle !== false ? 'R3' : ''
         }),
         s1: chart.addSeries(LineSeries, {
             color: supportColor,
@@ -442,7 +442,7 @@ export const createPivotPointsSeries = (chart, ind) => {
             lineStyle: 2,
             priceLineVisible: false,
             lastValueVisible: true,
-            title: 'S1'
+            title: ind.showTitle !== false ? 'S1' : ''
         }),
         s2: chart.addSeries(LineSeries, {
             color: supportColor,
@@ -450,7 +450,7 @@ export const createPivotPointsSeries = (chart, ind) => {
             lineStyle: 2,
             priceLineVisible: false,
             lastValueVisible: true,
-            title: 'S2'
+            title: ind.showTitle !== false ? 'S2' : ''
         }),
         s3: chart.addSeries(LineSeries, {
             color: supportColor,
@@ -458,7 +458,7 @@ export const createPivotPointsSeries = (chart, ind) => {
             lineStyle: 2,
             priceLineVisible: false,
             lastValueVisible: true,
-            title: 'S3'
+            title: ind.showTitle !== false ? 'S3' : ''
         })
     };
 };
