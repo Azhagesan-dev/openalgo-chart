@@ -6,12 +6,25 @@
 
 import { logger } from '../utils/logger.js';
 
-// NPL India's official NTP time API - provides sub-second accuracy for IST
-// Uses nginx proxy in production to bypass CORS
+/**
+ * Get NPL Time API URL
+ * 
+ * Configurable via VITE_NPL_TIME_URL environment variable:
+ * - '/npl-time' (default): Uses local proxy (Vite dev proxy or nginx production proxy)
+ * - 'disabled': Disables time sync, uses local browser time
+ * - 'https://www.nplindia.in/cgi-bin/ntp_client': Direct URL (requires CORS headers)
+ * - Custom URL: Your own NTP service endpoint
+ */
 const getNPLTimeUrl = () => {
     const clientTimestamp = Date.now() / 1000; // Current time in seconds
-    // Both development (Vite proxy) and production (nginx proxy) use /npl-time
-    return `/npl-time?${clientTimestamp.toFixed(3)}`;
+    const baseUrl = import.meta.env.VITE_NPL_TIME_URL || '/npl-time';
+
+    // Return null if disabled
+    if (baseUrl === 'disabled') {
+        return null;
+    }
+
+    return `${baseUrl}?${clientTimestamp.toFixed(3)}`;
 };
 
 const SYNC_INTERVAL_MS = 60 * 1000; // Resync every 1 minute for better accuracy
@@ -30,12 +43,20 @@ let syncIntervalId = null; // Track interval for cleanup
  * - nstt: NTP server transmit time (Unix epoch in UTC seconds)
  */
 export const syncTimeWithAPI = async () => {
+    // Skip sync if disabled
+    const url = getNPLTimeUrl();
+    if (url === null) {
+        logger.debug('[TimeService] Time sync disabled, using local browser time');
+        isSynced = true; // Mark as "synced" so app doesn't wait
+        return true;
+    }
+
     if (isSyncing) return isSynced;
     isSyncing = true;
 
     try {
         const requestStartTime = Date.now();
-        const response = await fetch(getNPLTimeUrl(), {
+        const response = await fetch(url, {
             headers: {
                 'accept': 'application/json, text/javascript, */*; q=0.01',
                 'x-requested-with': 'XMLHttpRequest'
