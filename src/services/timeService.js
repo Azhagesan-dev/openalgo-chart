@@ -7,18 +7,11 @@
 import { logger } from '../utils/logger.js';
 
 // NPL India's official NTP time API - provides sub-second accuracy for IST
-// Uses Vite proxy in development to bypass CORS
+// Uses nginx proxy in production to bypass CORS
 const getNPLTimeUrl = () => {
     const clientTimestamp = Date.now() / 1000; // Current time in seconds
-    // Use proxy path in development (Vite rewrites /npl-time to NPL India's endpoint)
-    const isLocalDev = typeof window !== 'undefined' &&
-        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-
-    if (isLocalDev) {
-        return `/npl-time?${clientTimestamp.toFixed(3)}`;
-    }
-    // Production: direct URL (would need server-side proxy or CORS headers)
-    return `https://www.nplindia.in/cgi-bin/ntp_client?${clientTimestamp.toFixed(3)}`;
+    // Both development (Vite proxy) and production (nginx proxy) use /npl-time
+    return `/npl-time?${clientTimestamp.toFixed(3)}`;
 };
 
 const SYNC_INTERVAL_MS = 60 * 1000; // Resync every 1 minute for better accuracy
